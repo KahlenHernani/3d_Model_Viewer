@@ -2,5 +2,18 @@ using UnityEngine;
 
 public class ModelPart : MonoBehaviour
 {
-    public Vector3 localPosition;
+    //Stores captured local position and exploded position of the part.
+    [SerializeField] private Vector3 localPosition;
+    [SerializeField] private Vector3 explodedPosition;
+    
+    // Read only properties to access and return values.
+    public Vector3 LocalPosition => localPosition;
+    public Vector3 ExplodedPosition => explodedPosition;
+
+
+    private void Start()
+    {
+        // Store initial local position of the part for later use.
+        localPosition = transform.localPosition;
+    }
 }
