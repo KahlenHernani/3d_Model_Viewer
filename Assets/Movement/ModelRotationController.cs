@@ -22,7 +22,7 @@ public class DragRotateModel : MonoBehaviour
         Vector2 mouseDelta = Mouse.current.delta.ReadValue();
 
         float yaw = -mouseDelta.x * rotationSpeed;
-        float pitch = mouseDelta.y * rotationSpeed;
+        float pitch = -mouseDelta.y * rotationSpeed;
 
         transform.Rotate(Vector3.up, yaw, Space.World);
         transform.Rotate(Vector3.right, pitch, Space.World);
