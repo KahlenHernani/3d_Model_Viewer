@@ -266,7 +266,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                         spread - previousHandSpread;
 
                     previousHandSpread = spread;
-                    if (Mathf.Abs(deltaSpread) < 0.005f)
+                    if (Mathf.Abs(deltaSpread) < 0.001f)
                     {
                         return;
                     }

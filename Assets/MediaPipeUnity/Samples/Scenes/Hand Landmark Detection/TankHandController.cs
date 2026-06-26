@@ -7,11 +7,11 @@ public class TankHandController : MonoBehaviour
     public ExplodeView explodeView;
 
     [Header("Distance Controls")]
-    [SerializeField] private float distanceSensitivity = 3f;
-    [SerializeField] private float damping = 5f;
+    [SerializeField] private float distanceSensitivity = 60f;
+    [SerializeField] private float smoothingSpeed = 15f;
 
     private float currentDistanceValue = 0.5f;
-    private float distanceVelocity = 0f;
+    private float targetDistanceValue = 0.5f;
 
     public enum InteractionMode
     {
@@ -29,16 +29,10 @@ public class TankHandController : MonoBehaviour
 
     private void Update()
     {
-        // Apply velocity
-        currentDistanceValue += distanceVelocity * Time.deltaTime;
-
-        currentDistanceValue = Mathf.Clamp01(currentDistanceValue);
-
-        // Smooth deceleration
-        distanceVelocity = Mathf.Lerp(
-            distanceVelocity,
-            0f,
-            damping * Time.deltaTime
+        currentDistanceValue = Mathf.Lerp(
+            currentDistanceValue,
+            targetDistanceValue,
+            smoothingSpeed * Time.deltaTime
         );
 
         if (currentMode == InteractionMode.Zoom)
@@ -71,7 +65,11 @@ public class TankHandController : MonoBehaviour
 
     public void UpdateDistanceDelta(float delta)
     {
-        distanceVelocity += delta * distanceSensitivity;
+        targetDistanceValue += delta * distanceSensitivity;
+
+        targetDistanceValue = Mathf.Clamp01(
+            targetDistanceValue
+        );
     }
 
     public void UpdateFist(bool fistDetected)
