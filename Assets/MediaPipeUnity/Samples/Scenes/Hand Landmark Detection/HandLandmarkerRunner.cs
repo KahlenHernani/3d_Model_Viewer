@@ -155,9 +155,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
     }
 
         private void OnHandLandmarkDetectionOutput(
-        HandLandmarkerResult result,
-        Image image,
-        long timestamp)
+    HandLandmarkerResult result,
+    Image image,
+    long timestamp)
         {
             _handLandmarkerResultAnnotationController.DrawLater(result);
 
@@ -169,35 +169,50 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             var hand = result.handLandmarks[0];
 
-            // Wrist landmark
+            // Wrist
             var wrist = hand.landmarks[0];
+
+            // Thumb tip
+            var thumb = hand.landmarks[4];
+
+            // Index tip
+            var index = hand.landmarks[8];
 
             Vector2 wristPos = new Vector2(
                 wrist.x,
                 wrist.y
             );
 
-            _tankController.UpdateRotation(wristPos);
-
-            // Thumb tip = 4
-            var thumb = hand.landmarks[4];
-
-            // Index tip = 8
-            var index = hand.landmarks[8];
-
             float pinchDistance = Vector2.Distance(
                 new Vector2(thumb.x, thumb.y),
                 new Vector2(index.x, index.y)
             );
 
-            float zoom =
-                Mathf.InverseLerp(
-                    0.02f,
-                    0.15f,
-                    pinchDistance);
+            bool isPinching = pinchDistance < 0.05f;
 
-            _tankController.UpdateZoom(zoom);
+            _tankController.UpdateRotation(
+                wristPos,
+                isPinching
+            );
 
+            // Fist detection
+            var indexKnuckle = hand.landmarks[6];
+            var middleTip = hand.landmarks[12];
+            var middleKnuckle = hand.landmarks[10];
+            var ringTip = hand.landmarks[16];
+            var ringKnuckle = hand.landmarks[14];
+            var pinkyTip = hand.landmarks[20];
+            var pinkyKnuckle = hand.landmarks[18];
+
+            bool fistDetected =
+                index.y > indexKnuckle.y &&
+                middleTip.y > middleKnuckle.y &&
+                ringTip.y > ringKnuckle.y &&
+                pinkyTip.y > pinkyKnuckle.y;
+
+            _tankController.UpdateFist(fistDetected);
+
+            // Two hand distance controls zoom/explode
             if (result.handLandmarks.Count >= 2)
             {
                 var hand1 = result.handLandmarks[0];
@@ -206,19 +221,18 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 var wrist1 = hand1.landmarks[0];
                 var wrist2 = hand2.landmarks[0];
 
-                float spread =
-                    Vector2.Distance(
-                        new Vector2(wrist1.x, wrist1.y),
-                        new Vector2(wrist2.x, wrist2.y)
-                    );
+                float spread = Vector2.Distance(
+                    new Vector2(wrist1.x, wrist1.y),
+                    new Vector2(wrist2.x, wrist2.y)
+                );
 
-                float explode =
-                    Mathf.InverseLerp(
-                        0.15f,
-                        0.75f,
-                        spread);
+                float value = Mathf.InverseLerp(
+                    0.15f,
+                    0.75f,
+                    spread
+                );
 
-                _tankController.UpdateExplode(explode);
+                _tankController.UpdateDistanceControl(value);
             }
         }
     }
