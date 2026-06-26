@@ -2,13 +2,16 @@ using UnityEngine;
 
 public class TankHandController : MonoBehaviour
 {
-    private float currentDistanceValue = 0.5f;
-
-    [SerializeField]
-    private float distanceSensitivity = 3f;
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
+
+    [Header("Distance Controls")]
+    [SerializeField] private float distanceSensitivity = 3f;
+    [SerializeField] private float damping = 5f;
+
+    private float currentDistanceValue = 0.5f;
+    private float distanceVelocity = 0f;
 
     public enum InteractionMode
     {
@@ -23,6 +26,30 @@ public class TankHandController : MonoBehaviour
     private bool hasPreviousWrist = false;
 
     private bool fistPreviouslyDetected = false;
+
+    private void Update()
+    {
+        // Apply velocity
+        currentDistanceValue += distanceVelocity * Time.deltaTime;
+
+        currentDistanceValue = Mathf.Clamp01(currentDistanceValue);
+
+        // Smooth deceleration
+        distanceVelocity = Mathf.Lerp(
+            distanceVelocity,
+            0f,
+            damping * Time.deltaTime
+        );
+
+        if (currentMode == InteractionMode.Zoom)
+        {
+            zoomController.SetZoom(currentDistanceValue);
+        }
+        else
+        {
+            explodeView.SetExplodeAmount(currentDistanceValue);
+        }
+    }
 
     public void UpdateRotation(Vector2 wrist, bool isPinching)
     {
@@ -44,19 +71,7 @@ public class TankHandController : MonoBehaviour
 
     public void UpdateDistanceDelta(float delta)
     {
-        currentDistanceValue += delta * distanceSensitivity;
-
-        currentDistanceValue =
-            Mathf.Clamp01(currentDistanceValue);
-
-        if (currentMode == InteractionMode.Zoom)
-        {
-            zoomController.SetZoom(currentDistanceValue);
-        }
-        else
-        {
-            explodeView.SetExplodeAmount(currentDistanceValue);
-        }
+        distanceVelocity += delta * distanceSensitivity;
     }
 
     public void UpdateFist(bool fistDetected)
