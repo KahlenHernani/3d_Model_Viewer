@@ -26,7 +26,7 @@ public class DragRotateModel : MonoBehaviour
 
         transform.Rotate(
             Vector3.right,
-            -rotationalVelocity.y * rotationSpeed * Time.deltaTime,
+            rotationalVelocity.y * rotationSpeed * Time.deltaTime,
             Space.World
         );
 
