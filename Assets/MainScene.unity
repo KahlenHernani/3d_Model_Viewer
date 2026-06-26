@@ -6750,10 +6750,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 739e5282bc3972f4f8372feeb3a77c41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TankHandController
-  distanceSensitivity: 3
   rotateModel: {fileID: 1247202062}
   zoomController: {fileID: 288177541}
   explodeView: {fileID: 1903861611}
+  distanceSensitivity: 3
+  smoothingSpeed: 15
   currentMode: 0
 --- !u!4 &1112551469
 Transform:
@@ -7564,6 +7565,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DragRotateModel
   rotationSpeed: 0.2
+  rotationDamping: 4
   useLeftMouseButton: 1
 --- !u!114 &1247202064
 MonoBehaviour:
@@ -11359,7 +11361,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5366f7ae6741453489882053ea548dcb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ExplodeView
-  explodeAmount: 0
+  explodeAmount: 0.693
   explodeDistance: 0.1
   explodeSpeed: 0.02
   useKeyboardControls: 1
