@@ -16,4 +16,9 @@ public class ModelPart : MonoBehaviour
         // Store initial local position of the part for later use.
         localPosition = transform.localPosition;
     }
+
+    public void SetExplodedPosition(Vector3 position)
+    {
+        explodedPosition = position;
+    }
 }
