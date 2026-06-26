@@ -155,9 +155,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
     }
 
         private void OnHandLandmarkDetectionOutput(
-    HandLandmarkerResult result,
-    Image image,
-    long timestamp)
+     HandLandmarkerResult result,
+     Image image,
+     long timestamp)
         {
             _handLandmarkerResultAnnotationController.DrawLater(result);
 
@@ -190,10 +190,14 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             bool isPinching = pinchDistance < 0.05f;
 
-            _tankController.UpdateRotation(
-                wristPos,
-                isPinching
-            );
+            // ONLY ROTATE WHEN EXACTLY ONE HAND IS DETECTED
+            if (result.handLandmarks.Count == 1)
+            {
+                _tankController.UpdateRotation(
+                    wristPos,
+                    isPinching
+                );
+            }
 
             // Fist detection
             var indexKnuckle = hand.landmarks[6];
@@ -212,27 +216,52 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             _tankController.UpdateFist(fistDetected);
 
-            // Two hand distance controls zoom/explode
+            // TWO HAND CONTROL
             if (result.handLandmarks.Count >= 2)
             {
                 var hand1 = result.handLandmarks[0];
                 var hand2 = result.handLandmarks[1];
 
-                var wrist1 = hand1.landmarks[0];
-                var wrist2 = hand2.landmarks[0];
+                // Hand 1 pinch
+                var thumb1 = hand1.landmarks[4];
+                var index1 = hand1.landmarks[8];
 
-                float spread = Vector2.Distance(
-                    new Vector2(wrist1.x, wrist1.y),
-                    new Vector2(wrist2.x, wrist2.y)
+                float pinch1 = Vector2.Distance(
+                    new Vector2(thumb1.x, thumb1.y),
+                    new Vector2(index1.x, index1.y)
                 );
 
-                float value = Mathf.InverseLerp(
-                    0.15f,
-                    0.75f,
-                    spread
+                // Hand 2 pinch
+                var thumb2 = hand2.landmarks[4];
+                var index2 = hand2.landmarks[8];
+
+                float pinch2 = Vector2.Distance(
+                    new Vector2(thumb2.x, thumb2.y),
+                    new Vector2(index2.x, index2.y)
                 );
 
-                _tankController.UpdateDistanceControl(value);
+                bool hand1Pinching = pinch1 < 0.05f;
+                bool hand2Pinching = pinch2 < 0.05f;
+
+                // ONLY ZOOM/EXPLODE WHEN BOTH HANDS ARE PINCHING
+                if (hand1Pinching && hand2Pinching)
+                {
+                    var wrist1 = hand1.landmarks[0];
+                    var wrist2 = hand2.landmarks[0];
+
+                    float spread = Vector2.Distance(
+                        new Vector2(wrist1.x, wrist1.y),
+                        new Vector2(wrist2.x, wrist2.y)
+                    );
+
+                    float value = Mathf.InverseLerp(
+                        0.15f,
+                        0.75f,
+                        spread
+                    );
+
+                    _tankController.UpdateDistanceControl(value);
+                }
             }
         }
     }
