@@ -15,7 +15,10 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
   {
     [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
 
-    private Experimental.TextureFramePool _textureFramePool;
+        [SerializeField]
+        private TankHandController _tankController;
+
+        private Experimental.TextureFramePool _textureFramePool;
 
     public readonly HandLandmarkDetectionConfig config = new HandLandmarkDetectionConfig();
 
@@ -151,9 +154,72 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
       }
     }
 
-    private void OnHandLandmarkDetectionOutput(HandLandmarkerResult result, Image image, long timestamp)
-    {
-      _handLandmarkerResultAnnotationController.DrawLater(result);
+        private void OnHandLandmarkDetectionOutput(
+        HandLandmarkerResult result,
+        Image image,
+        long timestamp)
+        {
+            _handLandmarkerResultAnnotationController.DrawLater(result);
+
+            if (_tankController == null)
+                return;
+
+            if (result.handLandmarks == null || result.handLandmarks.Count == 0)
+                return;
+
+            var hand = result.handLandmarks[0];
+
+            // Wrist landmark
+            var wrist = hand.landmarks[0];
+
+            Vector2 wristPos = new Vector2(
+                wrist.x,
+                wrist.y
+            );
+
+            _tankController.UpdateRotation(wristPos);
+
+            // Thumb tip = 4
+            var thumb = hand.landmarks[4];
+
+            // Index tip = 8
+            var index = hand.landmarks[8];
+
+            float pinchDistance = Vector2.Distance(
+                new Vector2(thumb.x, thumb.y),
+                new Vector2(index.x, index.y)
+            );
+
+            float zoom =
+                Mathf.InverseLerp(
+                    0.02f,
+                    0.15f,
+                    pinchDistance);
+
+            _tankController.UpdateZoom(zoom);
+
+            if (result.handLandmarks.Count >= 2)
+            {
+                var hand1 = result.handLandmarks[0];
+                var hand2 = result.handLandmarks[1];
+
+                var wrist1 = hand1.landmarks[0];
+                var wrist2 = hand2.landmarks[0];
+
+                float spread =
+                    Vector2.Distance(
+                        new Vector2(wrist1.x, wrist1.y),
+                        new Vector2(wrist2.x, wrist2.y)
+                    );
+
+                float explode =
+                    Mathf.InverseLerp(
+                        0.15f,
+                        0.75f,
+                        spread);
+
+                _tankController.UpdateExplode(explode);
+            }
+        }
     }
-  }
 }

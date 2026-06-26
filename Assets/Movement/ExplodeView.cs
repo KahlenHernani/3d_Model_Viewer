@@ -11,6 +11,8 @@ public class ExplodeView : MonoBehaviour
     public float explodeDistance = 2f;
     public float explodeSpeed = 0.5f;
 
+    public bool useKeyboardControls = true;
+
     private class PartData
     {
         public Transform part;
@@ -46,6 +48,9 @@ public class ExplodeView : MonoBehaviour
 
     void Update()
     {
+        if (!useKeyboardControls)
+            return;
+
         if (Keyboard.current == null)
             return;
 
@@ -64,12 +69,19 @@ public class ExplodeView : MonoBehaviour
         ApplyExplosion();
     }
 
+    public void SetExplodeAmount(float value)
+    {
+        explodeAmount = Mathf.Clamp01(value);
+        ApplyExplosion();
+    }
+
     private void ApplyExplosion()
     {
         foreach (PartData data in parts)
         {
             data.part.localPosition =
-                data.originalLocalPosition + data.direction * explodeAmount * explodeDistance;
+                data.originalLocalPosition +
+                data.direction * explodeAmount * explodeDistance;
         }
     }
 }
