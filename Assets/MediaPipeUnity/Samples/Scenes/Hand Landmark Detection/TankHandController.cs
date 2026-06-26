@@ -2,6 +2,10 @@ using UnityEngine;
 
 public class TankHandController : MonoBehaviour
 {
+    private float currentDistanceValue = 0.5f;
+
+    [SerializeField]
+    private float distanceSensitivity = 3f;
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
@@ -38,17 +42,20 @@ public class TankHandController : MonoBehaviour
         hasPreviousWrist = true;
     }
 
-    public void UpdateDistanceControl(float value)
+    public void UpdateDistanceDelta(float delta)
     {
-        value = Mathf.Clamp01(value);
+        currentDistanceValue += delta * distanceSensitivity;
+
+        currentDistanceValue =
+            Mathf.Clamp01(currentDistanceValue);
 
         if (currentMode == InteractionMode.Zoom)
         {
-            zoomController.SetZoom(value);
+            zoomController.SetZoom(currentDistanceValue);
         }
         else
         {
-            explodeView.SetExplodeAmount(value);
+            explodeView.SetExplodeAmount(currentDistanceValue);
         }
     }
 

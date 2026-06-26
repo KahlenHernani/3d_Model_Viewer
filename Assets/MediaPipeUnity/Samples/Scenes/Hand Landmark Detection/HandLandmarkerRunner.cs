@@ -13,7 +13,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 {
   public class HandLandmarkerRunner : VisionTaskApiRunner<HandLandmarker>
   {
-    [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
+
+       private float previousHandSpread = -1f;
+        [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
 
         [SerializeField]
         private TankHandController _tankController;
@@ -254,13 +256,27 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                         new Vector2(wrist2.x, wrist2.y)
                     );
 
-                    float value = Mathf.InverseLerp(
-                        0.15f,
-                        0.75f,
-                        spread
-                    );
+                    if (previousHandSpread < 0f)
+                    {
+                        previousHandSpread = spread;
+                        return;
+                    }
 
-                    _tankController.UpdateDistanceControl(value);
+                    float deltaSpread =
+                        spread - previousHandSpread;
+
+                    previousHandSpread = spread;
+                    if (Mathf.Abs(deltaSpread) < 0.005f)
+                    {
+                        return;
+                    }
+                    _tankController.UpdateDistanceDelta(
+                        deltaSpread
+                    );
+                }
+                else
+                {
+                    previousHandSpread = -1f;
                 }
             }
         }
