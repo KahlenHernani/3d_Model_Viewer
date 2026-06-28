@@ -81,6 +81,13 @@ public class TankHandController : MonoBehaviour
                 ? InteractionMode.Explode
                 : InteractionMode.Zoom;
 
+                // Fixes bug where entering the exploded view did not keep the model intact until pulled apart with other hand symbols
+                if(currentMode == InteractionMode.zoom)
+            {
+                currentDistanceValue = 0f;
+                targetDistanceValue = 0f;
+            }
+
             Debug.Log("Switched Mode To: " + currentMode);
         }
 
