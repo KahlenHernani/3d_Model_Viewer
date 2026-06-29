@@ -218,6 +218,15 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             _tankController.UpdateFist(fistDetected);
 
+            // Peace sign detection for grouping.
+            bool peaceDetected = 
+                index.y < indexKnuckle.y &&
+                middleTip.y < middleKnuckle.y &&
+                ringTip.y > ringKnuckle.y &&
+                pinkyTip.y > pinkyKnuckle.y;
+
+            _tankController.UpdatePeaceDetected(peaceDetected);
+
             // TWO HAND CONTROL
             if (result.handLandmarks.Count >= 2)
             {

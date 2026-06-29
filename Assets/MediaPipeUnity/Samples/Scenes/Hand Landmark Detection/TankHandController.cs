@@ -5,6 +5,7 @@ public class TankHandController : MonoBehaviour
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
+    public GroupView groupView;
 
     [Header("Distance Controls")]
     [SerializeField] private float distanceSensitivity = 60f;
@@ -16,7 +17,8 @@ public class TankHandController : MonoBehaviour
     public enum InteractionMode
     {
         Zoom,
-        Explode
+        Explode,
+        Group
     }
 
     [Header("Current Mode")]
@@ -26,6 +28,9 @@ public class TankHandController : MonoBehaviour
     private bool hasPreviousWrist = false;
 
     private bool fistPreviouslyDetected = false;
+    // Added for the exploded, grouped mode.
+    private bool peaceDetected = false;
+    private bool peacePreviouslyDetected = false;
 
     private void Update()
     {
@@ -39,9 +44,15 @@ public class TankHandController : MonoBehaviour
         {
             zoomController.SetZoom(currentDistanceValue);
         }
-        else
+        else if(currentMode == InteractionMode.Explode)
         {
-            explodeView.SetExplodeAmount(currentDistanceValue);
+            explodeView.SetExplodeAmount(currentDistanceValue, currentMode);
+        } 
+        else if(currentMode == InteractionMode.Group)
+        {
+            // Needs to subtly group everything in their own, name respective groups
+            // Where they can be zoomed in on even more
+            explodeView.setExplodeAmount(currentDistanceValue, currentMode);
         }
     }
 
@@ -82,7 +93,7 @@ public class TankHandController : MonoBehaviour
                 : InteractionMode.Zoom;
 
                 // Fixes bug where entering the exploded view did not keep the model intact until pulled apart with other hand symbols
-                if(currentMode == InteractionMode.zoom)
+                if(currentMode == InteractionMode.Explode)
             {
                 currentDistanceValue = 0f;
                 targetDistanceValue = 0f;
@@ -92,5 +103,23 @@ public class TankHandController : MonoBehaviour
         }
 
         fistPreviouslyDetected = fistDetected;
+    }
+
+    public void UpdatePeaceDetected(bool peaceDetected)
+    {
+        if(peaceDetected && !peacePreviouslyDetected)
+        {
+            currentMode = currentMode == InteractionMode.Zoom
+            ? InteractionMode.Group
+            : InteractionMode.Zoom;
+
+            if(currentMode == InteractionMode.Group)
+            {
+                currentDistanceValue = 0f;
+                targetDistanceValue= 0f;
+            }
+            Debug.Log("Switched Mode To: "+currentMode);
+        }
+        peacePreviouslyDetected = peaceDetected;
     }
 }
