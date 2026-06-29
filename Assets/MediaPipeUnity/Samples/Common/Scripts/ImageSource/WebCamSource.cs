@@ -130,10 +130,29 @@ namespace Mediapipe.Unity
 
       availableSources = WebCamTexture.devices;
 
-      if (availableSources != null && availableSources.Length > 0)
-      {
-        webCamDevice = availableSources[1];
-      }
+Debug.Log("===== CAMERA LIST =====");
+
+foreach (var device in availableSources)
+{
+    Debug.Log(device.name);
+}
+
+for (int i = 0; i < availableSources.Length; i++)
+{
+    string name = availableSources[i].name.ToLower();
+
+    // Skip Sony SRD cameras
+    if (name.Contains("sony") ||
+        name.Contains("srd") ||
+        name.Contains("tracking"))
+    {
+        continue;
+    }
+
+    webCamDevice = availableSources[i];
+    Debug.Log("Using camera: " + webCamDevice.Value.name);
+    break;
+}
     }
 
     private IEnumerator GetPermission()
