@@ -5,6 +5,7 @@ public class TankHandController : MonoBehaviour
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
+    public ModelPanController panController;
 
     [Header("Distance Controls")]
     [SerializeField] private float distanceSensitivity = 60f;
@@ -70,6 +71,11 @@ public class TankHandController : MonoBehaviour
         targetDistanceValue = Mathf.Clamp01(
             targetDistanceValue
         );
+    }
+
+    public void UpdatePan(Vector2 delta)
+    {
+        panController?.SetPanInput(delta);
     }
 
     public void UpdateFist(bool fistDetected)

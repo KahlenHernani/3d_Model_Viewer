@@ -15,6 +15,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
   {
 
        private float previousHandSpread = -1f;
+        private Vector2? _previousMidpoint = null;
         [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
 
         [SerializeField]
@@ -245,38 +246,43 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 bool hand1Pinching = pinch1 < 0.05f;
                 bool hand2Pinching = pinch2 < 0.05f;
 
-                // ONLY ZOOM/EXPLODE WHEN BOTH HANDS ARE PINCHING
+                // ONLY ZOOM/EXPLODE/PAN WHEN BOTH HANDS ARE PINCHING
                 if (hand1Pinching && hand2Pinching)
                 {
                     var wrist1 = hand1.landmarks[0];
                     var wrist2 = hand2.landmarks[0];
 
-                    float spread = Vector2.Distance(
-                        new Vector2(wrist1.x, wrist1.y),
-                        new Vector2(wrist2.x, wrist2.y)
-                    );
+                    Vector2 w1 = new Vector2(wrist1.x, wrist1.y);
+                    Vector2 w2 = new Vector2(wrist2.x, wrist2.y);
 
-                    if (previousHandSpread < 0f)
+                    float spread = Vector2.Distance(w1, w2);
+                    Vector2 mid = (w1 + w2) * 0.5f;
+
+                    if (previousHandSpread >= 0f)
                     {
-                        previousHandSpread = spread;
-                        return;
+                        float deltaSpread = spread - previousHandSpread;
+                        if (Mathf.Abs(deltaSpread) >= 0.001f)
+                        {
+                            _tankController.UpdateDistanceDelta(deltaSpread);
+                        }
                     }
 
-                    float deltaSpread =
-                        spread - previousHandSpread;
+                    if (_previousMidpoint.HasValue)
+                    {
+                        Vector2 midDelta = mid - _previousMidpoint.Value;
+                        if (midDelta.magnitude >= 0.001f)
+                        {
+                            _tankController.UpdatePan(midDelta);
+                        }
+                    }
 
                     previousHandSpread = spread;
-                    if (Mathf.Abs(deltaSpread) < 0.001f)
-                    {
-                        return;
-                    }
-                    _tankController.UpdateDistanceDelta(
-                        deltaSpread
-                    );
+                    _previousMidpoint = mid;
                 }
                 else
                 {
                     previousHandSpread = -1f;
+                    _previousMidpoint = null;
                 }
             }
         }
