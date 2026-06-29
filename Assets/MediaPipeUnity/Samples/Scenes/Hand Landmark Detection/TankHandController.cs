@@ -1,20 +1,27 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class TankHandController : MonoBehaviour
 {
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
+    public GroupCameraController groupCameraController;
 
     [Header("Distance Controls")]
     [SerializeField] private float distanceSensitivity = 60f;
     [SerializeField] private float smoothingSpeed = 15f;
-    [SerializeField] private float gestureHoldThreshold = 0.2f;
-    [SerializeField] private float gestureCooldown = 0.55f;
+    [SerializeField] private float gestureHoldThreshold = 0.25f;
+    [SerializeField] private float fistSwitchHoldThreshold = 0.16f;
+    [SerializeField] private float modeSwitchHoldThreshold = 0.3f;
+    [SerializeField] private float gestureCooldown = 0.45f;
+    [SerializeField] private float gestureDropGrace = 0.25f;
     [SerializeField] private float groupEntryZoom = 0.15f;
-
+    [SerializeField] private float minimumGroupEntryZoom = 0.25f;
     private float currentDistanceValue = 0.5f;
     private float targetDistanceValue = 0.5f;
+    private float currentExplodeAmount = 0f;
+    private float targetExplodeAmount = 0f;
 
     public enum InteractionMode
     {
@@ -31,15 +38,28 @@ public class TankHandController : MonoBehaviour
 
     private volatile bool fistDetected;
     private volatile bool thumbsUpDetected;
+    private volatile bool openHandDetected;
     private float fistHoldTime = 0f;
+    private float fistMissingTime = 0f;
     private bool fistLatched = false;
     private float thumbsUpHoldTime = 0f;
+    private float thumbsUpMissingTime = 0f;
     private bool thumbsUpLatched = false;
+    private float openHandHoldTime = 0f;
+    private float openHandMissingTime = 0f;
+    private bool openHandLatched = false;
     private float gestureCooldownRemaining = 0f;
+    private volatile int groupNavigationDirection = 0;
+    private bool groupNavigationLatched = false;
+    private ExplodeView.GroupViewState groupViewState = ExplodeView.GroupViewState.OrbitOverview;
+    private bool explodeZoomLocked = false;
+    private readonly object groupOrbitInputLock = new object();
+    private Vector2 pendingGroupOrbitInput = Vector2.zero;
 
     private void Start()
     {
-        zoomController.SetGroupFieldOfView(false);
+        EnsureGroupCameraConfigured();
+        zoomController?.SetGroupFieldOfView(false);
     }
 
     private void Update()
@@ -47,6 +67,12 @@ public class TankHandController : MonoBehaviour
         currentDistanceValue = Mathf.Lerp(
             currentDistanceValue,
             targetDistanceValue,
+            smoothingSpeed * Time.deltaTime
+        );
+
+        currentExplodeAmount = Mathf.Lerp(
+            currentExplodeAmount,
+            targetExplodeAmount,
             smoothingSpeed * Time.deltaTime
         );
 
@@ -63,16 +89,23 @@ public class TankHandController : MonoBehaviour
         else if (currentMode == InteractionMode.Explode)
         {
             zoomController.SetZoom(currentDistanceValue);
-            explodeView.SetExplodeAmount(currentDistanceValue, currentMode);
+            explodeView.SetExplodeAmount(currentExplodeAmount, currentMode);
         }
         else if (currentMode == InteractionMode.Group)
         {
-            zoomController.SetZoom(currentDistanceValue);
             explodeView.SetExplodeAmount(1f, currentMode);
+
+            if (groupViewState == ExplodeView.GroupViewState.FocusedGroup && groupCameraController != null)
+            {
+                groupCameraController.SetFocusZoom(currentDistanceValue);
+            }
         }
 
         UpdateFistMode();
         UpdateThumbsUpMode();
+        UpdateOpenHandExplodeLock();
+        UpdateGroupNavigation();
+        ApplyPendingGroupOrbitInput();
     }
 
     public void UpdateRotation(Vector2 wrist, bool isPinching)
@@ -86,7 +119,15 @@ public class TankHandController : MonoBehaviour
         if (hasPreviousWrist)
         {
             Vector2 delta = wrist - previousWrist;
-            rotateModel.SetRotationInput(delta * 15f);
+            if (currentMode == InteractionMode.Group &&
+                groupViewState == ExplodeView.GroupViewState.FocusedGroup)
+            {
+                QueueGroupOrbitInput(delta);
+            }
+            else
+            {
+                rotateModel.SetRotationInput(delta * 15f);
+            }
         }
 
         previousWrist = wrist;
@@ -95,6 +136,13 @@ public class TankHandController : MonoBehaviour
 
     public void UpdateDistanceDelta(float delta)
     {
+        if (currentMode == InteractionMode.Explode && !explodeZoomLocked)
+        {
+            targetExplodeAmount += delta * distanceSensitivity;
+            targetExplodeAmount = Mathf.Clamp01(targetExplodeAmount);
+            return;
+        }
+
         targetDistanceValue += delta * distanceSensitivity;
 
         targetDistanceValue = Mathf.Clamp01(
@@ -112,6 +160,16 @@ public class TankHandController : MonoBehaviour
         thumbsUpDetected = detected;
     }
 
+    public void SetOpenHandDetected(bool detected)
+    {
+        openHandDetected = detected;
+    }
+
+    public void SetGroupNavigationDirection(int direction)
+    {
+        groupNavigationDirection = Mathf.Clamp(direction, -1, 1);
+    }
+
     private void UpdateFistMode()
     {
         if (gestureCooldownRemaining > 0f)
@@ -121,13 +179,18 @@ public class TankHandController : MonoBehaviour
 
         if (!fistDetected)
         {
-            fistHoldTime = 0f;
-            fistLatched = false;
+            fistMissingTime += Time.deltaTime;
+            if (fistMissingTime > gestureDropGrace)
+            {
+                fistHoldTime = 0f;
+                fistLatched = false;
+            }
             return;
         }
 
+        fistMissingTime = 0f;
         fistHoldTime += Time.deltaTime;
-        if (fistLatched || fistHoldTime < gestureHoldThreshold)
+        if (fistLatched || fistHoldTime < fistSwitchHoldThreshold)
         {
             return;
         }
@@ -143,7 +206,51 @@ public class TankHandController : MonoBehaviour
         if (currentMode == InteractionMode.Explode)
         {
             SwitchMode(InteractionMode.Zoom);
+            return;
         }
+
+        if (currentMode == InteractionMode.Group)
+        {
+            SwitchMode(InteractionMode.Explode);
+        }
+    }
+
+    private void UpdateOpenHandExplodeLock()
+    {
+        if (currentMode != InteractionMode.Explode)
+        {
+            openHandHoldTime = 0f;
+            openHandLatched = false;
+            return;
+        }
+
+        if (gestureCooldownRemaining > 0f)
+        {
+            return;
+        }
+
+        if (!openHandDetected)
+        {
+            openHandMissingTime += Time.deltaTime;
+            if (openHandMissingTime > gestureDropGrace)
+            {
+                openHandHoldTime = 0f;
+                openHandLatched = false;
+            }
+            return;
+        }
+
+        openHandMissingTime = 0f;
+        openHandHoldTime += Time.deltaTime;
+        if (openHandLatched || openHandHoldTime < gestureHoldThreshold)
+        {
+            return;
+        }
+
+        openHandLatched = true;
+        explodeZoomLocked = true;
+        currentExplodeAmount = targetExplodeAmount;
+        Debug.Log("Explode locked. Pinch now controls camera zoom.");
     }
 
     private void UpdateThumbsUpMode()
@@ -155,13 +262,18 @@ public class TankHandController : MonoBehaviour
 
         if (!thumbsUpDetected)
         {
-            thumbsUpHoldTime = 0f;
-            thumbsUpLatched = false;
+            thumbsUpMissingTime += Time.deltaTime;
+            if (thumbsUpMissingTime > gestureDropGrace)
+            {
+                thumbsUpHoldTime = 0f;
+                thumbsUpLatched = false;
+            }
             return;
         }
 
+        thumbsUpMissingTime = 0f;
         thumbsUpHoldTime += Time.deltaTime;
-        if (thumbsUpLatched || thumbsUpHoldTime < gestureHoldThreshold)
+        if (thumbsUpLatched || thumbsUpHoldTime < modeSwitchHoldThreshold)
         {
             return;
         }
@@ -174,7 +286,13 @@ public class TankHandController : MonoBehaviour
             return;
         }
 
-        if (currentMode == InteractionMode.Group)
+        if (currentMode == InteractionMode.Group && groupViewState == ExplodeView.GroupViewState.FocusedGroup)
+        {
+            SwitchMode(InteractionMode.Zoom);
+            return;
+        }
+
+        if (currentMode == InteractionMode.Group && groupViewState == ExplodeView.GroupViewState.OrbitOverview)
         {
             SwitchMode(InteractionMode.Zoom);
         }
@@ -190,19 +308,236 @@ public class TankHandController : MonoBehaviour
         currentMode = nextMode;
         if (nextMode == InteractionMode.Group)
         {
-            currentDistanceValue = groupEntryZoom;
-            targetDistanceValue = groupEntryZoom;
+            EnsureGroupCameraConfigured();
+            currentDistanceValue = GetGroupEntryZoom();
+            targetDistanceValue = GetGroupEntryZoom();
+            groupViewState = ExplodeView.GroupViewState.OrbitOverview;
+            zoomController?.SetExternalControl(true);
+            explodeView.ResetGroupSelection();
+            FocusSelectedGroup();
+        }
+        else if (nextMode == InteractionMode.Explode)
+        {
+            currentDistanceValue = 0f;
+            targetDistanceValue = 0f;
+            currentExplodeAmount = 0f;
+            targetExplodeAmount = 0f;
+            explodeZoomLocked = false;
+            groupViewState = ExplodeView.GroupViewState.OrbitOverview;
+            ClearPendingGroupOrbitInput();
+            groupCameraController?.Deactivate();
+            rotateModel?.ResetRotation();
+            zoomController?.ResetToDefaultView(0f, true);
+            explodeView.SetExplodeAmount(0f, InteractionMode.Explode);
         }
         else
         {
             currentDistanceValue = 0f;
             targetDistanceValue = 0f;
+            currentExplodeAmount = 0f;
+            targetExplodeAmount = 0f;
+            explodeZoomLocked = false;
+            groupViewState = ExplodeView.GroupViewState.OrbitOverview;
+            ClearPendingGroupOrbitInput();
+            groupCameraController?.Deactivate();
+            rotateModel?.ResetRotation();
+            zoomController?.ResetToDefaultView(0f, true);
+            explodeView.SetExplodeAmount(0f, InteractionMode.Zoom);
         }
 
-        zoomController.SetGroupFieldOfView(nextMode == InteractionMode.Group);
+        zoomController?.SetGroupFieldOfView(nextMode == InteractionMode.Group);
         gestureCooldownRemaining = gestureCooldown;
         fistHoldTime = 0f;
+        fistMissingTime = 0f;
         thumbsUpHoldTime = 0f;
+        thumbsUpMissingTime = 0f;
+        openHandHoldTime = 0f;
+        openHandMissingTime = 0f;
         Debug.Log("Switched Mode To: " + currentMode);
+    }
+
+    private void UpdateGroupNavigation()
+    {
+        if (currentMode != InteractionMode.Group)
+        {
+            groupNavigationLatched = false;
+            return;
+        }
+
+        if (gestureCooldownRemaining > 0f)
+        {
+            return;
+        }
+
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
+            {
+                NavigateGroupNext();
+                gestureCooldownRemaining = gestureCooldown;
+                return;
+            }
+
+            if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
+            {
+                NavigateGroupPrevious();
+                gestureCooldownRemaining = gestureCooldown;
+                return;
+            }
+        }
+
+        if (groupNavigationDirection == 0)
+        {
+            groupNavigationLatched = false;
+            return;
+        }
+
+        if (groupNavigationLatched)
+        {
+            return;
+        }
+
+        groupNavigationLatched = true;
+
+        if (groupNavigationDirection > 0)
+        {
+            NavigateGroupPrevious();
+        }
+        else
+        {
+            NavigateGroupNext();
+        }
+
+        gestureCooldownRemaining = gestureCooldown;
+    }
+
+    public void NavigateGroupNext()
+    {
+        if (currentMode != InteractionMode.Group)
+        {
+            return;
+        }
+
+        explodeView.NextGroup();
+        FocusSelectedGroup();
+    }
+
+    public void NavigateGroupPrevious()
+    {
+        if (currentMode != InteractionMode.Group)
+        {
+            return;
+        }
+
+        explodeView.PreviousGroup();
+        FocusSelectedGroup();
+    }
+
+    private void FocusSelectedGroup()
+    {
+        if (groupCameraController == null)
+        {
+            return;
+        }
+
+        groupViewState = ExplodeView.GroupViewState.FocusedGroup;
+        currentDistanceValue = GetGroupEntryZoom();
+        targetDistanceValue = GetGroupEntryZoom();
+        groupCameraController.FocusGroup(
+            explodeView.GetGroupCenter(explodeView.SelectedGroupIndex)
+        );
+    }
+
+    private float GetGroupEntryZoom()
+    {
+        return Mathf.Clamp01(Mathf.Max(groupEntryZoom, minimumGroupEntryZoom));
+    }
+
+    private void QueueGroupOrbitInput(Vector2 input)
+    {
+        lock (groupOrbitInputLock)
+        {
+            pendingGroupOrbitInput += input;
+        }
+    }
+
+    private void ApplyPendingGroupOrbitInput()
+    {
+        if (groupCameraController == null ||
+            currentMode != InteractionMode.Group ||
+            groupViewState != ExplodeView.GroupViewState.FocusedGroup)
+        {
+            ClearPendingGroupOrbitInput();
+            return;
+        }
+
+        Vector2 orbitInput;
+        lock (groupOrbitInputLock)
+        {
+            orbitInput = pendingGroupOrbitInput;
+            pendingGroupOrbitInput = Vector2.zero;
+        }
+
+        if (orbitInput == Vector2.zero)
+        {
+            return;
+        }
+
+        groupCameraController.OrbitAroundFocus(orbitInput);
+    }
+
+    private void ClearPendingGroupOrbitInput()
+    {
+        lock (groupOrbitInputLock)
+        {
+            pendingGroupOrbitInput = Vector2.zero;
+        }
+    }
+
+    private void EnsureGroupCameraConfigured()
+    {
+        Camera controlledCamera = null;
+        if (zoomController != null)
+        {
+            controlledCamera = zoomController.GetComponent<Camera>();
+        }
+
+        if (controlledCamera == null)
+        {
+            controlledCamera = Camera.main;
+        }
+
+        if (groupCameraController == null && controlledCamera != null)
+        {
+            groupCameraController = controlledCamera.GetComponent<GroupCameraController>();
+            if (groupCameraController == null)
+            {
+                groupCameraController = controlledCamera.gameObject.AddComponent<GroupCameraController>();
+            }
+        }
+
+        if (groupCameraController != null)
+        {
+            if (groupCameraController.targetCamera == null && controlledCamera != null)
+            {
+                groupCameraController.targetCamera = controlledCamera;
+            }
+
+            if (groupCameraController.lookTarget == null && explodeView != null)
+            {
+                groupCameraController.lookTarget = explodeView.transform;
+            }
+        }
+
+        if (explodeView != null)
+        {
+            Camera groupCamera = controlledCamera;
+            if (groupCameraController != null && groupCameraController.targetCamera != null)
+            {
+                groupCamera = groupCameraController.targetCamera;
+            }
+
+            explodeView.SetGroupCamera(groupCamera);
+        }
     }
 }

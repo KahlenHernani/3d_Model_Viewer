@@ -9,10 +9,22 @@ public class DragRotateModel : MonoBehaviour
     [SerializeField] private bool useLeftMouseButton = true;
 
     private Vector2 rotationalVelocity;
+    private Quaternion initialRotation;
+
+    private void Awake()
+    {
+        initialRotation = transform.rotation;
+    }
 
     public void SetRotationInput(Vector2 input)
     {
         rotationalVelocity += input * 3f;
+    }
+
+    public void ResetRotation()
+    {
+        rotationalVelocity = Vector2.zero;
+        transform.rotation = initialRotation;
     }
 
     private void Update()

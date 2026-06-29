@@ -18,11 +18,14 @@ public class CameraZoomController : MonoBehaviour
     [SerializeField] private float fovSmoothingSpeed = 8f;
 
     private Vector3 startOffsetDirection;
+    private Quaternion startRotation;
     private Camera controlledCamera;
     private float targetFieldOfView;
+    private bool externalControlEnabled = false;
 
     private void Start()
     {
+        startRotation = transform.rotation;
         controlledCamera = GetComponent<Camera>();
         if (controlledCamera != null)
         {
@@ -39,6 +42,11 @@ public class CameraZoomController : MonoBehaviour
 
     private void Update()
     {
+        if (externalControlEnabled)
+        {
+            return;
+        }
+
         if (Mouse.current != null)
         {
             float scroll = Mouse.current.scroll.ReadValue().y;
@@ -61,6 +69,34 @@ public class CameraZoomController : MonoBehaviour
     public void SetGroupFieldOfView(bool isGroupMode)
     {
         targetFieldOfView = isGroupMode ? groupFieldOfView : normalFieldOfView;
+    }
+
+    public void ResetToNormalFieldOfView(bool immediate)
+    {
+        targetFieldOfView = normalFieldOfView;
+
+        if (immediate && controlledCamera != null)
+        {
+            controlledCamera.fieldOfView = normalFieldOfView;
+        }
+    }
+
+    public void ResetToDefaultView(float normalizedZoom, bool immediate)
+    {
+        SetExternalControl(false);
+        SetZoom(normalizedZoom);
+        ResetToNormalFieldOfView(immediate);
+
+        if (immediate)
+        {
+            UpdateCameraPosition();
+            transform.rotation = startRotation;
+        }
+    }
+
+    public void SetExternalControl(bool enabled)
+    {
+        externalControlEnabled = enabled;
     }
 
     private void UpdateCameraPosition()

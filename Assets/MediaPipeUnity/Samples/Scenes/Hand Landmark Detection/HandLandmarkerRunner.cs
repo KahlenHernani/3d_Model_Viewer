@@ -171,6 +171,8 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             {
                 _tankController.SetFistDetected(false);
                 _tankController.SetThumbsUpDetected(false);
+                _tankController.SetOpenHandDetected(false);
+                _tankController.SetGroupNavigationDirection(0);
                 previousHandSpread = -1f;
                 return;
             }
@@ -208,11 +210,67 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             }
 
             bool singleHandDetected = result.handLandmarks.Count == 1;
-            bool thumbsUpDetected = singleHandDetected && IsThumbsUp(hand);
-            bool fistDetected = singleHandDetected && !thumbsUpDetected && IsFist(hand);
+            bool twoHandPinching =
+                result.handLandmarks.Count >= 2 &&
+                IsPinching(result.handLandmarks[0]) &&
+                IsPinching(result.handLandmarks[1]);
+            bool modeGestureAllowed =
+                result.handLandmarks.Count >= 1 &&
+                !twoHandPinching;
+            bool thumbsUpDetected = false;
+            bool openHandDetected = false;
+            bool fistDetected = false;
+
+            if (modeGestureAllowed)
+            {
+                for (int i = 0; i < result.handLandmarks.Count; i++)
+                {
+                    if (IsThumbsUp(result.handLandmarks[i]))
+                    {
+                        thumbsUpDetected = true;
+                        break;
+                    }
+                }
+
+                if (!thumbsUpDetected)
+                {
+                    for (int i = 0; i < result.handLandmarks.Count; i++)
+                    {
+                        if (IsOpenHand(result.handLandmarks[i]))
+                        {
+                            openHandDetected = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!thumbsUpDetected && !openHandDetected)
+                {
+                    for (int i = 0; i < result.handLandmarks.Count; i++)
+                    {
+                        if (IsFist(result.handLandmarks[i]))
+                        {
+                            fistDetected = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            bool groupNavigationAllowed =
+                singleHandDetected &&
+                !thumbsUpDetected &&
+                !fistDetected &&
+                !openHandDetected &&
+                _tankController.currentMode == TankHandController.InteractionMode.Group;
+            int groupNavigationDirection = groupNavigationAllowed
+                ? GetGroupNavigationDirection(hand)
+                : 0;
 
             _tankController.SetFistDetected(fistDetected);
             _tankController.SetThumbsUpDetected(thumbsUpDetected);
+            _tankController.SetOpenHandDetected(openHandDetected);
+            _tankController.SetGroupNavigationDirection(groupNavigationDirection);
 
             // TWO HAND CONTROL
             if (result.handLandmarks.Count >= 2)
@@ -220,29 +278,8 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 var hand1 = result.handLandmarks[0];
                 var hand2 = result.handLandmarks[1];
 
-                // Hand 1 pinch
-                var thumb1 = hand1.landmarks[4];
-                var index1 = hand1.landmarks[8];
-
-                float pinch1 = Vector2.Distance(
-                    new Vector2(thumb1.x, thumb1.y),
-                    new Vector2(index1.x, index1.y)
-                );
-
-                // Hand 2 pinch
-                var thumb2 = hand2.landmarks[4];
-                var index2 = hand2.landmarks[8];
-
-                float pinch2 = Vector2.Distance(
-                    new Vector2(thumb2.x, thumb2.y),
-                    new Vector2(index2.x, index2.y)
-                );
-
-                bool hand1Pinching = pinch1 < 0.05f;
-                bool hand2Pinching = pinch2 < 0.05f;
-
                 // ONLY ZOOM/EXPLODE WHEN BOTH HANDS ARE PINCHING
-                if (hand1Pinching && hand2Pinching)
+                if (twoHandPinching)
                 {
                     var wrist1 = hand1.landmarks[0];
                     var wrist2 = hand2.landmarks[0];
@@ -281,60 +318,203 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             }
         }
 
-    private static bool IsFist(NormalizedLandmarks hand)
-    {
-        var indexPip = hand.landmarks[6];
-        var indexTip = hand.landmarks[8];
-        var middlePip = hand.landmarks[10];
-        var middleTip = hand.landmarks[12];
-        var ringPip = hand.landmarks[14];
-        var ringTip = hand.landmarks[16];
-        var pinkyPip = hand.landmarks[18];
-        var pinkyTip = hand.landmarks[20];
+      private static bool IsPinching(NormalizedLandmarks hand)
+      {
+          var thumbTip = hand.landmarks[4];
+          var indexTip = hand.landmarks[8];
 
-        return
-            indexTip.y > indexPip.y &&
-            middleTip.y > middlePip.y &&
-            ringTip.y > ringPip.y &&
-            pinkyTip.y > pinkyPip.y;
-    }
+          return Vector2.Distance(
+              new Vector2(thumbTip.x, thumbTip.y),
+              new Vector2(indexTip.x, indexTip.y)
+          ) < 0.05f;
+      }
 
-    private static bool IsThumbsUp(NormalizedLandmarks hand)
-    {
-        var wrist = hand.landmarks[0];
-        var thumbMcp = hand.landmarks[2];
-        var thumbIp = hand.landmarks[3];
-        var thumbTip = hand.landmarks[4];
-        var indexPip = hand.landmarks[6];
-        var indexTip = hand.landmarks[8];
-        var middlePip = hand.landmarks[10];
-        var middleTip = hand.landmarks[12];
-        var ringPip = hand.landmarks[14];
-        var ringTip = hand.landmarks[16];
-        var pinkyPip = hand.landmarks[18];
-        var pinkyTip = hand.landmarks[20];
+      private static bool IsFist(NormalizedLandmarks hand)
+      {
+          var wrist = hand.landmarks[0];
+          var thumbMcp = hand.landmarks[2];
+          var thumbTip = hand.landmarks[4];
+          var indexPip = hand.landmarks[6];
+          var indexTip = hand.landmarks[8];
+          var middleMcp = hand.landmarks[9];
+          var middlePip = hand.landmarks[10];
+          var middleTip = hand.landmarks[12];
+          var ringPip = hand.landmarks[14];
+          var ringTip = hand.landmarks[16];
+          var pinkyPip = hand.landmarks[18];
+          var pinkyTip = hand.landmarks[20];
 
-        bool thumbRaised =
-            thumbTip.y < thumbIp.y &&
-            thumbIp.y < thumbMcp.y &&
-            thumbTip.y < wrist.y;
+          float palmSize = Vector2.Distance(
+              new Vector2(wrist.x, wrist.y),
+              new Vector2(middleMcp.x, middleMcp.y)
+          );
 
-        bool fingersCurled =
-            indexTip.y > indexPip.y &&
-            middleTip.y > middlePip.y &&
-            ringTip.y > ringPip.y &&
-            pinkyTip.y > pinkyPip.y;
+          Vector2 wristPoint = new Vector2(wrist.x, wrist.y);
+          float curlTolerance = palmSize * 0.22f;
+          bool indexCurled =
+              indexTip.y > indexPip.y - curlTolerance ||
+              Vector2.Distance(new Vector2(indexTip.x, indexTip.y), wristPoint) <
+              Vector2.Distance(new Vector2(indexPip.x, indexPip.y), wristPoint) + curlTolerance;
+          bool middleCurled =
+              middleTip.y > middlePip.y - curlTolerance ||
+              Vector2.Distance(new Vector2(middleTip.x, middleTip.y), wristPoint) <
+              Vector2.Distance(new Vector2(middlePip.x, middlePip.y), wristPoint) + curlTolerance;
+          bool ringCurled =
+              ringTip.y > ringPip.y - curlTolerance ||
+              Vector2.Distance(new Vector2(ringTip.x, ringTip.y), wristPoint) <
+              Vector2.Distance(new Vector2(ringPip.x, ringPip.y), wristPoint) + curlTolerance;
+          bool pinkyCurled =
+              pinkyTip.y > pinkyPip.y - curlTolerance ||
+              Vector2.Distance(new Vector2(pinkyTip.x, pinkyTip.y), wristPoint) <
+              Vector2.Distance(new Vector2(pinkyPip.x, pinkyPip.y), wristPoint) + curlTolerance;
+          int curledFingerCount =
+              (indexCurled ? 1 : 0) +
+              (middleCurled ? 1 : 0) +
+              (ringCurled ? 1 : 0) +
+              (pinkyCurled ? 1 : 0);
 
-        bool thumbSeparatedFromIndex =
-            Vector2.Distance(
-                new Vector2(thumbTip.x, thumbTip.y),
-                new Vector2(indexTip.x, indexTip.y)
-            ) > 0.12f;
+          Vector2 thumbDirection = new Vector2(
+              thumbTip.x - thumbMcp.x,
+              thumbTip.y - thumbMcp.y
+          );
+          bool thumbClearlyRaised =
+              thumbTip.y < wrist.y - palmSize * 0.28f &&
+              thumbDirection.y < -palmSize * 0.4f &&
+              Mathf.Abs(thumbDirection.y) > Mathf.Abs(thumbDirection.x) * 1.25f;
 
-        return
-            thumbRaised &&
-            fingersCurled &&
-            thumbSeparatedFromIndex;
-    }
+          return
+              indexCurled &&
+              curledFingerCount >= 2 &&
+              !thumbClearlyRaised;
+      }
+
+      private static bool IsThumbsUp(NormalizedLandmarks hand)
+      {
+          var wrist = hand.landmarks[0];
+          var thumbMcp = hand.landmarks[2];
+          var thumbTip = hand.landmarks[4];
+          var indexMcp = hand.landmarks[5];
+          var indexPip = hand.landmarks[6];
+          var indexTip = hand.landmarks[8];
+          var middleMcp = hand.landmarks[9];
+          var middlePip = hand.landmarks[10];
+          var middleTip = hand.landmarks[12];
+          var ringPip = hand.landmarks[14];
+          var ringTip = hand.landmarks[16];
+          var pinkyPip = hand.landmarks[18];
+          var pinkyTip = hand.landmarks[20];
+
+          float palmSize = Vector2.Distance(
+              new Vector2(wrist.x, wrist.y),
+              new Vector2(middleMcp.x, middleMcp.y)
+          );
+          Vector2 thumbDirection = new Vector2(
+              thumbTip.x - thumbMcp.x,
+              thumbTip.y - thumbMcp.y
+          );
+
+          bool thumbRaised =
+              thumbTip.y < thumbMcp.y - palmSize * 0.12f &&
+              thumbTip.y < wrist.y - palmSize * 0.12f;
+          bool thumbMostlyVertical =
+              thumbDirection.y < -palmSize * 0.22f &&
+              Mathf.Abs(thumbDirection.y) > Mathf.Abs(thumbDirection.x) * 0.8f;
+
+          float curlTolerance = palmSize * 0.14f;
+          int curledFingerCount =
+              (indexTip.y > indexPip.y - curlTolerance ? 1 : 0) +
+              (middleTip.y > middlePip.y - curlTolerance ? 1 : 0) +
+              (ringTip.y > ringPip.y - curlTolerance ? 1 : 0) +
+              (pinkyTip.y > pinkyPip.y - curlTolerance ? 1 : 0);
+
+          bool thumbSeparatedFromIndex =
+              Vector2.Distance(
+                  new Vector2(thumbTip.x, thumbTip.y),
+                  new Vector2(indexMcp.x, indexMcp.y)
+              ) > palmSize * 0.45f;
+
+          return
+              thumbRaised &&
+              thumbMostlyVertical &&
+              curledFingerCount >= 2 &&
+              thumbSeparatedFromIndex;
+      }
+
+      private static bool IsOpenHand(NormalizedLandmarks hand)
+      {
+          var indexPip = hand.landmarks[6];
+          var indexTip = hand.landmarks[8];
+          var middlePip = hand.landmarks[10];
+          var middleTip = hand.landmarks[12];
+          var ringPip = hand.landmarks[14];
+          var ringTip = hand.landmarks[16];
+          var pinkyPip = hand.landmarks[18];
+          var pinkyTip = hand.landmarks[20];
+
+          return
+              indexTip.y < indexPip.y &&
+              middleTip.y < middlePip.y &&
+              ringTip.y < ringPip.y &&
+              pinkyTip.y < pinkyPip.y;
+      }
+
+      private static int GetGroupNavigationDirection(NormalizedLandmarks hand)
+      {
+          var thumbTip = hand.landmarks[4];
+
+          var indexMcp = hand.landmarks[5];
+          var indexTip = hand.landmarks[8];
+
+          var middleMcp = hand.landmarks[9];
+          var middleTip = hand.landmarks[12];
+          var ringMcp = hand.landmarks[13];
+          var ringTip = hand.landmarks[16];
+          var pinkyMcp = hand.landmarks[17];
+          var pinkyTip = hand.landmarks[20];
+
+          Vector2 indexDirection = new Vector2(
+              indexTip.x - indexMcp.x,
+              indexTip.y - indexMcp.y
+          );
+
+          float indexLength = Vector2.Distance(
+              new Vector2(indexTip.x, indexTip.y),
+              new Vector2(indexMcp.x, indexMcp.y)
+          );
+
+          float middleLength = Vector2.Distance(
+              new Vector2(middleTip.x, middleTip.y),
+              new Vector2(middleMcp.x, middleMcp.y)
+          );
+
+          float ringLength = Vector2.Distance(
+              new Vector2(ringTip.x, ringTip.y),
+              new Vector2(ringMcp.x, ringMcp.y)
+          );
+
+          float pinkyLength = Vector2.Distance(
+              new Vector2(pinkyTip.x, pinkyTip.y),
+              new Vector2(pinkyMcp.x, pinkyMcp.y)
+          );
+
+          bool indexExtended = indexLength > 0.12f;
+          bool otherFingersNotExtended =
+              middleLength < indexLength * 0.9f &&
+              ringLength < indexLength * 0.9f &&
+              pinkyLength < indexLength * 0.9f;
+          bool mostlyHorizontal = Mathf.Abs(indexDirection.x) > Mathf.Abs(indexDirection.y) * 1.25f;
+          bool notPinching = Vector2.Distance(
+              new Vector2(thumbTip.x, thumbTip.y),
+              new Vector2(indexTip.x, indexTip.y)
+          ) > 0.08f;
+
+          if (!indexExtended || !otherFingersNotExtended || !mostlyHorizontal || !notPinching)
+          {
+              return 0;
+          }
+
+          return indexDirection.x > 0f ? 1 : -1;
+      }
+
     }
 }
