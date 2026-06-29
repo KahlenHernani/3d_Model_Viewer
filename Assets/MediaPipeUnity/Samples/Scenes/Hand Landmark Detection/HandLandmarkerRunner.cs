@@ -6,6 +6,7 @@
 
 using System.Collections;
 using Mediapipe.Tasks.Vision.HandLandmarker;
+using Mediapipe.Tasks.Components.Containers;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -14,13 +15,13 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
   public class HandLandmarkerRunner : VisionTaskApiRunner<HandLandmarker>
   {
 
-       private float previousHandSpread = -1f;
-        [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
+    private float previousHandSpread = -1f;
+    [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
 
-        [SerializeField]
-        private TankHandController _tankController;
+    [SerializeField]
+    private TankHandController _tankController;
 
-        private Experimental.TextureFramePool _textureFramePool;
+    private Experimental.TextureFramePool _textureFramePool;
 
     public readonly HandLandmarkDetectionConfig config = new HandLandmarkDetectionConfig();
 
@@ -167,7 +168,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 return;
 
             if (result.handLandmarks == null || result.handLandmarks.Count == 0)
+            {
+                _tankController.SetFistDetected(false);
+                _tankController.SetThumbsUpDetected(false);
+                previousHandSpread = -1f;
                 return;
+            }
 
             var hand = result.handLandmarks[0];
 
@@ -201,31 +207,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 );
             }
 
-            // Fist detection
-            var indexKnuckle = hand.landmarks[6];
-            var middleTip = hand.landmarks[12];
-            var middleKnuckle = hand.landmarks[10];
-            var ringTip = hand.landmarks[16];
-            var ringKnuckle = hand.landmarks[14];
-            var pinkyTip = hand.landmarks[20];
-            var pinkyKnuckle = hand.landmarks[18];
+            bool singleHandDetected = result.handLandmarks.Count == 1;
+            bool thumbsUpDetected = singleHandDetected && IsThumbsUp(hand);
+            bool fistDetected = singleHandDetected && !thumbsUpDetected && IsFist(hand);
 
-            bool fistDetected =
-                index.y > indexKnuckle.y &&
-                middleTip.y > middleKnuckle.y &&
-                ringTip.y > ringKnuckle.y &&
-                pinkyTip.y > pinkyKnuckle.y;
-
-            _tankController.UpdateFist(fistDetected);
-
-            // Peace sign detection for grouping.
-            bool peaceDetected = 
-                index.y < indexKnuckle.y &&
-                middleTip.y < middleKnuckle.y &&
-                ringTip.y > ringKnuckle.y &&
-                pinkyTip.y > pinkyKnuckle.y;
-
-            _tankController.UpdatePeaceDetected(peaceDetected);
+            _tankController.SetFistDetected(fistDetected);
+            _tankController.SetThumbsUpDetected(thumbsUpDetected);
 
             // TWO HAND CONTROL
             if (result.handLandmarks.Count >= 2)
@@ -288,6 +275,66 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                     previousHandSpread = -1f;
                 }
             }
+            else
+            {
+                previousHandSpread = -1f;
+            }
         }
+
+    private static bool IsFist(NormalizedLandmarks hand)
+    {
+        var indexPip = hand.landmarks[6];
+        var indexTip = hand.landmarks[8];
+        var middlePip = hand.landmarks[10];
+        var middleTip = hand.landmarks[12];
+        var ringPip = hand.landmarks[14];
+        var ringTip = hand.landmarks[16];
+        var pinkyPip = hand.landmarks[18];
+        var pinkyTip = hand.landmarks[20];
+
+        return
+            indexTip.y > indexPip.y &&
+            middleTip.y > middlePip.y &&
+            ringTip.y > ringPip.y &&
+            pinkyTip.y > pinkyPip.y;
+    }
+
+    private static bool IsThumbsUp(NormalizedLandmarks hand)
+    {
+        var wrist = hand.landmarks[0];
+        var thumbMcp = hand.landmarks[2];
+        var thumbIp = hand.landmarks[3];
+        var thumbTip = hand.landmarks[4];
+        var indexPip = hand.landmarks[6];
+        var indexTip = hand.landmarks[8];
+        var middlePip = hand.landmarks[10];
+        var middleTip = hand.landmarks[12];
+        var ringPip = hand.landmarks[14];
+        var ringTip = hand.landmarks[16];
+        var pinkyPip = hand.landmarks[18];
+        var pinkyTip = hand.landmarks[20];
+
+        bool thumbRaised =
+            thumbTip.y < thumbIp.y &&
+            thumbIp.y < thumbMcp.y &&
+            thumbTip.y < wrist.y;
+
+        bool fingersCurled =
+            indexTip.y > indexPip.y &&
+            middleTip.y > middlePip.y &&
+            ringTip.y > ringPip.y &&
+            pinkyTip.y > pinkyPip.y;
+
+        bool thumbSeparatedFromIndex =
+            Vector2.Distance(
+                new Vector2(thumbTip.x, thumbTip.y),
+                new Vector2(indexTip.x, indexTip.y)
+            ) > 0.12f;
+
+        return
+            thumbRaised &&
+            fingersCurled &&
+            thumbSeparatedFromIndex;
+    }
     }
 }

@@ -6750,10 +6750,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 739e5282bc3972f4f8372feeb3a77c41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TankHandController
-  distanceSensitivity: 3
   rotateModel: {fileID: 1247202062}
   zoomController: {fileID: 288177541}
   explodeView: {fileID: 1903861611}
+  distanceSensitivity: 3
+  smoothingSpeed: 15
   currentMode: 0
 --- !u!4 &1112551469
 Transform:
@@ -7563,7 +7564,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b63607bbb66db7345a4e4122766eb00c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DragRotateModel
-  rotationSpeed: 0.2
+  rotationSpeed: 20
+  rotationDamping: 4
   useLeftMouseButton: 1
 --- !u!114 &1247202064
 MonoBehaviour:
@@ -10003,6 +10005,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: -9220974908191476128, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_4
+      objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.09392
@@ -10043,6 +10049,126 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -8461157965377409397, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_2_latch
+      objectReference: {fileID: 0}
+    - target: {fileID: -8014186890705491998, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: middleWheelArmor_3
+      objectReference: {fileID: 0}
+    - target: {fileID: -8008379547850819101, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: muzzleInBarrel_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -7012080000360831843, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: front_1_armor_wheels
+      objectReference: {fileID: 0}
+    - target: {fileID: -6683618533897631503, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: bags_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -6674090920057241603, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_5
+      objectReference: {fileID: 0}
+    - target: {fileID: -5892009603976307808, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_7_001
+      objectReference: {fileID: 0}
+    - target: {fileID: -5736021567856148613, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_8_stuff_004
+      objectReference: {fileID: 0}
+    - target: {fileID: -5009226779750062755, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_6_stuff_002
+      objectReference: {fileID: 0}
+    - target: {fileID: -4914108871595270332, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: backWheels_2
+      objectReference: {fileID: 0}
+    - target: {fileID: -4873810336609408350, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: middleWheels_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -4731654155173639203, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -4357420675022389865, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_6_stuff_002
+      objectReference: {fileID: 0}
+    - target: {fileID: -4345216561195790796, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_3_stuff
+      objectReference: {fileID: 0}
+    - target: {fileID: -4265346203684794025, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: lights_2_001
+      objectReference: {fileID: 0}
+    - target: {fileID: -4236490434727111351, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_7
+      objectReference: {fileID: 0}
+    - target: {fileID: -4096562362511409150, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: turret_2_holder
+      objectReference: {fileID: 0}
+    - target: {fileID: -3553284457341042989, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_3_stuff_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -3223600162837142007, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: ammo_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -2714407445852525825, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_10_004
+      objectReference: {fileID: 0}
+    - target: {fileID: -2472229949039578322, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_9_003
+      objectReference: {fileID: 0}
+    - target: {fileID: -1534435956221278464, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_5_stuff_001
+      objectReference: {fileID: 0}
+    - target: {fileID: -1226310823240026003, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: lights_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -1201721225924078604, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_7_stuff_003
+      objectReference: {fileID: 0}
+    - target: {fileID: -1039088126882328053, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: armor_1
+      objectReference: {fileID: 0}
+    - target: {fileID: -997183980817474045, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_8_002
+      objectReference: {fileID: 0}
+    - target: {fileID: -897429542554234864, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_4_stuff_3
+      objectReference: {fileID: 0}
+    - target: {fileID: -653358795531345734, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_11_random
+      objectReference: {fileID: 0}
+    - target: {fileID: -443989170310652598, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: middleWheelArmor_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 467993811558757269, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_4_stuff_2
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       propertyPath: m_Name
       value: untitled
@@ -10050,6 +10176,86 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       propertyPath: m_IsActive
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1985308293691334927, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_1_rotators
+      objectReference: {fileID: 0}
+    - target: {fileID: 2356392070320139575, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: bigBarrel_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2467482113581997749, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head _2_stuff_2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3959434811857556901, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: middleWheelArmor_2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4138657368986603301, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: body_2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4324800694926703030, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: turret_3_shield
+      objectReference: {fileID: 0}
+    - target: {fileID: 4439560460534963328, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_5_stuff_001
+      objectReference: {fileID: 0}
+    - target: {fileID: 5424345062621855337, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: ammo_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5428403831897149280, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: armor_2_under
+      objectReference: {fileID: 0}
+    - target: {fileID: 5470744875142965240, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_2
+      objectReference: {fileID: 0}
+    - target: {fileID: 5539778558486906114, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: head_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5744426304526646487, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: front_2_wheels
+      objectReference: {fileID: 0}
+    - target: {fileID: 5884669468637027005, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: middleWheelArmor_4
+      objectReference: {fileID: 0}
+    - target: {fileID: 6487979776345678624, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_3_cover
+      objectReference: {fileID: 0}
+    - target: {fileID: 6487979776345678624, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_StaticEditorFlags
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7054206702474386987, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: wheels_6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8451994382109372378, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: turret_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8475421762386848759, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: flare_1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9144280856106056128, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: backWheels_1_armor
+      objectReference: {fileID: 0}
+    - target: {fileID: 9164507729207480332, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_Name
+      value: seat_1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects:

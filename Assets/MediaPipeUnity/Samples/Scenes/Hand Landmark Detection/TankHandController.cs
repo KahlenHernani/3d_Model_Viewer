@@ -5,11 +5,13 @@ public class TankHandController : MonoBehaviour
     public DragRotateModel rotateModel;
     public CameraZoomController zoomController;
     public ExplodeView explodeView;
-    public GroupView groupView;
 
     [Header("Distance Controls")]
     [SerializeField] private float distanceSensitivity = 60f;
     [SerializeField] private float smoothingSpeed = 15f;
+    [SerializeField] private float gestureHoldThreshold = 0.2f;
+    [SerializeField] private float gestureCooldown = 0.55f;
+    [SerializeField] private float groupEntryZoom = 0.15f;
 
     private float currentDistanceValue = 0.5f;
     private float targetDistanceValue = 0.5f;
@@ -27,10 +29,18 @@ public class TankHandController : MonoBehaviour
     private Vector2 previousWrist;
     private bool hasPreviousWrist = false;
 
-    private bool fistPreviouslyDetected = false;
-    // Added for the exploded, grouped mode.
-    private bool peaceDetected = false;
-    private bool peacePreviouslyDetected = false;
+    private volatile bool fistDetected;
+    private volatile bool thumbsUpDetected;
+    private float fistHoldTime = 0f;
+    private bool fistLatched = false;
+    private float thumbsUpHoldTime = 0f;
+    private bool thumbsUpLatched = false;
+    private float gestureCooldownRemaining = 0f;
+
+    private void Start()
+    {
+        zoomController.SetGroupFieldOfView(false);
+    }
 
     private void Update()
     {
@@ -40,20 +50,29 @@ public class TankHandController : MonoBehaviour
             smoothingSpeed * Time.deltaTime
         );
 
+        if (gestureCooldownRemaining > 0f)
+        {
+            gestureCooldownRemaining -= Time.deltaTime;
+        }
+
         if (currentMode == InteractionMode.Zoom)
         {
             zoomController.SetZoom(currentDistanceValue);
+            explodeView.SetExplodeAmount(0f, currentMode);
         }
-        else if(currentMode == InteractionMode.Explode)
+        else if (currentMode == InteractionMode.Explode)
         {
+            zoomController.SetZoom(currentDistanceValue);
             explodeView.SetExplodeAmount(currentDistanceValue, currentMode);
-        } 
-        else if(currentMode == InteractionMode.Group)
-        {
-            // Needs to subtly group everything in their own, name respective groups
-            // Where they can be zoomed in on even more
-            explodeView.setExplodeAmount(currentDistanceValue, currentMode);
         }
+        else if (currentMode == InteractionMode.Group)
+        {
+            zoomController.SetZoom(currentDistanceValue);
+            explodeView.SetExplodeAmount(1f, currentMode);
+        }
+
+        UpdateFistMode();
+        UpdateThumbsUpMode();
     }
 
     public void UpdateRotation(Vector2 wrist, bool isPinching)
@@ -83,43 +102,107 @@ public class TankHandController : MonoBehaviour
         );
     }
 
-    public void UpdateFist(bool fistDetected)
+    public void SetFistDetected(bool detected)
     {
-        if (fistDetected && !fistPreviouslyDetected)
-        {
-            currentMode =
-                currentMode == InteractionMode.Zoom
-                ? InteractionMode.Explode
-                : InteractionMode.Zoom;
-
-                // Fixes bug where entering the exploded view did not keep the model intact until pulled apart with other hand symbols
-                if(currentMode == InteractionMode.Explode)
-            {
-                currentDistanceValue = 0f;
-                targetDistanceValue = 0f;
-            }
-
-            Debug.Log("Switched Mode To: " + currentMode);
-        }
-
-        fistPreviouslyDetected = fistDetected;
+        fistDetected = detected;
     }
 
-    public void UpdatePeaceDetected(bool peaceDetected)
+    public void SetThumbsUpDetected(bool detected)
     {
-        if(peaceDetected && !peacePreviouslyDetected)
-        {
-            currentMode = currentMode == InteractionMode.Zoom
-            ? InteractionMode.Group
-            : InteractionMode.Zoom;
+        thumbsUpDetected = detected;
+    }
 
-            if(currentMode == InteractionMode.Group)
-            {
-                currentDistanceValue = 0f;
-                targetDistanceValue= 0f;
-            }
-            Debug.Log("Switched Mode To: "+currentMode);
+    private void UpdateFistMode()
+    {
+        if (gestureCooldownRemaining > 0f)
+        {
+            return;
         }
-        peacePreviouslyDetected = peaceDetected;
+
+        if (!fistDetected)
+        {
+            fistHoldTime = 0f;
+            fistLatched = false;
+            return;
+        }
+
+        fistHoldTime += Time.deltaTime;
+        if (fistLatched || fistHoldTime < gestureHoldThreshold)
+        {
+            return;
+        }
+
+        fistLatched = true;
+
+        if (currentMode == InteractionMode.Zoom)
+        {
+            SwitchMode(InteractionMode.Explode);
+            return;
+        }
+
+        if (currentMode == InteractionMode.Explode)
+        {
+            SwitchMode(InteractionMode.Zoom);
+        }
+    }
+
+    private void UpdateThumbsUpMode()
+    {
+        if (gestureCooldownRemaining > 0f)
+        {
+            return;
+        }
+
+        if (!thumbsUpDetected)
+        {
+            thumbsUpHoldTime = 0f;
+            thumbsUpLatched = false;
+            return;
+        }
+
+        thumbsUpHoldTime += Time.deltaTime;
+        if (thumbsUpLatched || thumbsUpHoldTime < gestureHoldThreshold)
+        {
+            return;
+        }
+
+        thumbsUpLatched = true;
+
+        if (currentMode == InteractionMode.Zoom)
+        {
+            SwitchMode(InteractionMode.Group);
+            return;
+        }
+
+        if (currentMode == InteractionMode.Group)
+        {
+            SwitchMode(InteractionMode.Zoom);
+        }
+    }
+
+    private void SwitchMode(InteractionMode nextMode)
+    {
+        if (currentMode == nextMode)
+        {
+            return;
+        }
+
+        currentMode = nextMode;
+        if (nextMode == InteractionMode.Group)
+        {
+            currentDistanceValue = groupEntryZoom;
+            targetDistanceValue = groupEntryZoom;
+        }
+        else
+        {
+            currentDistanceValue = 0f;
+            targetDistanceValue = 0f;
+        }
+
+        zoomController.SetGroupFieldOfView(nextMode == InteractionMode.Group);
+        gestureCooldownRemaining = gestureCooldown;
+        fistHoldTime = 0f;
+        thumbsUpHoldTime = 0f;
+        Debug.Log("Switched Mode To: " + currentMode);
     }
 }

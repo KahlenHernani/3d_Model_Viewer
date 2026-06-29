@@ -12,10 +12,24 @@ public class CameraZoomController : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float zoomValue = 0.5f;
     [SerializeField] private float scrollSensitivity = 0.1f;
 
+    [Header("FOV Settings")]
+    [SerializeField] private float normalFieldOfView = 60f;
+    [SerializeField] private float groupFieldOfView = 85f;
+    [SerializeField] private float fovSmoothingSpeed = 8f;
+
     private Vector3 startOffsetDirection;
+    private Camera controlledCamera;
+    private float targetFieldOfView;
 
     private void Start()
     {
+        controlledCamera = GetComponent<Camera>();
+        if (controlledCamera != null)
+        {
+            normalFieldOfView = controlledCamera.fieldOfView;
+            targetFieldOfView = normalFieldOfView;
+        }
+
         if (target == null)
             return;
 
@@ -36,11 +50,17 @@ public class CameraZoomController : MonoBehaviour
         }
 
         UpdateCameraPosition();
+        UpdateFieldOfView();
     }
 
     public void SetZoom(float normalizedValue)
     {
         zoomValue = Mathf.Clamp01(normalizedValue);
+    }
+
+    public void SetGroupFieldOfView(bool isGroupMode)
+    {
+        targetFieldOfView = isGroupMode ? groupFieldOfView : normalFieldOfView;
     }
 
     private void UpdateCameraPosition()
@@ -50,5 +70,17 @@ public class CameraZoomController : MonoBehaviour
 
         float distance = Mathf.Lerp(maxDistance, minDistance, zoomValue);
         transform.position = target.position + startOffsetDirection * distance;
+    }
+
+    private void UpdateFieldOfView()
+    {
+        if (controlledCamera == null)
+            return;
+
+        controlledCamera.fieldOfView = Mathf.Lerp(
+            controlledCamera.fieldOfView,
+            targetFieldOfView,
+            fovSmoothingSpeed * Time.deltaTime
+        );
     }
 }

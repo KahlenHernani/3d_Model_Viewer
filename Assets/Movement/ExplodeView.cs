@@ -19,40 +19,112 @@ public class ExplodeView : MonoBehaviour
         public Transform part;
         public Vector3 originalLocalPosition;
         public Vector3 direction;
+        public Vector3 groupLocalOffset;
+    }
+
+    private class GroupData
+    {
+        public string name;
+        public int index;
+        public Vector3 originalCenter;
+        public readonly List<PartData> parts = new List<PartData>();
     }
 
     private readonly List<PartData> parts = new List<PartData>();
-    private readonly Dictionary<string, List<PartData>> groupDict = new Dictionary<string, List<PartData>>();
+    private readonly Dictionary<string, GroupData> groupDict = new Dictionary<string, GroupData>();
+    private readonly List<GroupData> orderedGroups = new List<GroupData>();
+
+    [Header("Group Carousel")]
+    public int selectedGroupIndex = 0;
+    public float groupSpacing = 0.25f;
+    public float selectedGroupScale = 1.4f;
+    public float unselectedGroupScale = 0.75f;
+    public float groupGlobeRadius = 0.04f;
+    public float selectedGroupForwardOffset = -0.08f;
 
     void Start()
     {
         parts.Clear();
+        groupDict.Clear();
+        orderedGroups.Clear();
 
         foreach (Transform child in transform)
         {
-
             string groupName = child.name.Split('_')[0];
             PartData data = new PartData();
             data.part = child;
             data.originalLocalPosition = child.localPosition;
-
-            Vector3 dir = child.localPosition;
-
-            if (dir == Vector3.zero)
-            {
-                dir = Random.onUnitSphere;
-            }
-
-            data.direction = dir.normalized;
             if (!groupDict.ContainsKey(groupName))
             {
-                groupDict[groupName] = new List<PartData>();
+                groupDict[groupName] = new GroupData { name = groupName };
             }
-            groupDict[groupName].Add(data);
+            groupDict[groupName].parts.Add(data);
 
             parts.Add(data);
         }
 
+        foreach (KeyValuePair<string, GroupData> entry in groupDict)
+        {
+            GroupData groupData = entry.Value;
+            Vector3 groupCenter = Vector3.zero;
+
+            for (int i = 0; i < groupData.parts.Count; i++)
+            {
+                groupCenter += groupData.parts[i].originalLocalPosition;
+            }
+
+            if (groupData.parts.Count > 0)
+            {
+                groupCenter /= groupData.parts.Count;
+            }
+
+            groupData.originalCenter = groupCenter;
+
+            for (int i = 0; i < groupData.parts.Count; i++)
+            {
+                PartData partData = groupData.parts[i];
+                Vector3 direction = partData.originalLocalPosition - groupCenter;
+                partData.groupLocalOffset = Random.onUnitSphere * groupGlobeRadius;
+
+                if (direction == Vector3.zero)
+                {
+                    direction = Random.onUnitSphere;
+                }
+                partData.direction = direction.normalized;
+            }
+
+            orderedGroups.Add(groupData);
+        }
+
+        orderedGroups.Sort((left, right) => string.CompareOrdinal(left.name, right.name));
+        for (int i = 0; i < orderedGroups.Count; i++)
+        {
+            orderedGroups[i].index = i;
+        }
+
+        ApplyExplosion();
+    }
+    // For group mode
+    public void NextGroup()
+    {
+        if (orderedGroups.Count == 0)
+        {
+            return;
+        }
+
+        // Cycle through the groups in a circular manner
+        selectedGroupIndex = (selectedGroupIndex + 1) % orderedGroups.Count;
+        ApplyExplosion();
+    }
+
+    public void PreviousGroup()
+    {
+        if (orderedGroups.Count == 0)
+        {
+            return;
+        }
+
+        selectedGroupIndex = (selectedGroupIndex - 1 + orderedGroups.Count) % orderedGroups.Count;
         ApplyExplosion();
     }
 
@@ -88,7 +160,16 @@ public class ExplodeView : MonoBehaviour
 
     private void ApplyExplosion()
     {
-        if(currentMode == TankHandController.InteractionMode.Explode)
+        if (currentMode == TankHandController.InteractionMode.Zoom)
+        {
+            foreach (PartData data in parts)
+            {
+                data.part.localPosition = data.originalLocalPosition;
+            }
+            return;
+        }
+
+        if (currentMode == TankHandController.InteractionMode.Explode)
         {
             foreach (PartData data in parts)
             {
@@ -96,29 +177,42 @@ public class ExplodeView : MonoBehaviour
                 data.originalLocalPosition +
                 data.direction * explodeAmount * explodeDistance;
             }
-            
+            return;
         }
-        else if(currentMode == TankHandController.InteractionMode.Group)
+
+        if (currentMode == TankHandController.InteractionMode.Group)
         {
             int groupIndex = 0;
-            foreach (var groupEntry in groupDict)
+            foreach (GroupData groupData in orderedGroups)
             {
-                float angle = (groupIndex / (float)groupDict.Count) * Mathf.PI * 2f;
-                Vector3 groupCenter = new Vector3(Mathf.Cos(angle) * explodeAmount * explodeDistance, 0, Mathf.Sin(angle)*explodeAmount * explodeDistance);
+                int offsetFromSelected = groupIndex - selectedGroupIndex;
 
-                int partIndex = 0;
-
-                foreach (PartData data in groupEntry.Value)
+                if (offsetFromSelected > orderedGroups.Count / 2)
                 {
-                    float partAngle = (partIndex / (float)groupEntry.Value.Count) * Mathf.PI*2f;
-                    Vector3 offset = new Vector3(Mathf.Cos(partAngle) * explodeAmount*0.5f, 0, Mathf.Sin(partAngle)*explodeAmount * 0.5f);
-
-                    data.part.localPosition = data.originalLocalPosition + groupCenter + offset;
-                    partIndex++;
+                    offsetFromSelected -= orderedGroups.Count;
                 }
+                else if (offsetFromSelected < -orderedGroups.Count / 2)
+                {
+                    offsetFromSelected += orderedGroups.Count;
+                }
+
+                float scale = groupIndex == selectedGroupIndex
+                    ? selectedGroupScale
+                    : unselectedGroupScale;
+
+                Vector3 groupCenter = new Vector3(
+                    offsetFromSelected * groupSpacing,
+                    0f,
+                    groupIndex == selectedGroupIndex ? selectedGroupForwardOffset : 0f
+                );
+
+                foreach (PartData data in groupData.parts)
+                {
+                    data.part.localPosition = groupCenter + data.groupLocalOffset * scale;
+                }
+
                 groupIndex++;
             }
-            
         }
     }
 }
