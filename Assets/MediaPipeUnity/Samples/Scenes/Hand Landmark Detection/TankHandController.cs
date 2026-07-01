@@ -18,6 +18,9 @@ public class TankHandController : MonoBehaviour
     [SerializeField] private float gestureDropGrace = 0.25f;
     [SerializeField] private float groupEntryZoom = 0.15f;
     [SerializeField] private float minimumGroupEntryZoom = 0.25f;
+    [Header("Group Navigation")]
+    [SerializeField] private float groupNavigationHoldThreshold = 0.18f;
+    [SerializeField] private bool invertGroupNavigationDirection = false;
     private float currentDistanceValue = 0.5f;
     private float targetDistanceValue = 0.5f;
     private float currentExplodeAmount = 0f;
@@ -50,6 +53,8 @@ public class TankHandController : MonoBehaviour
     private bool openHandLatched = false;
     private float gestureCooldownRemaining = 0f;
     private volatile int groupNavigationDirection = 0;
+    private int pendingGroupNavigationDirection = 0;
+    private float groupNavigationHoldTime = 0f;
     private bool groupNavigationLatched = false;
     private ExplodeView.GroupViewState groupViewState = ExplodeView.GroupViewState.OrbitOverview;
     private bool explodeZoomLocked = false;
@@ -353,6 +358,9 @@ public class TankHandController : MonoBehaviour
         thumbsUpMissingTime = 0f;
         openHandHoldTime = 0f;
         openHandMissingTime = 0f;
+        pendingGroupNavigationDirection = 0;
+        groupNavigationHoldTime = 0f;
+        groupNavigationLatched = false;
         Debug.Log("Switched Mode To: " + currentMode);
     }
 
@@ -360,6 +368,8 @@ public class TankHandController : MonoBehaviour
     {
         if (currentMode != InteractionMode.Group)
         {
+            pendingGroupNavigationDirection = 0;
+            groupNavigationHoldTime = 0f;
             groupNavigationLatched = false;
             return;
         }
@@ -388,24 +398,44 @@ public class TankHandController : MonoBehaviour
 
         if (groupNavigationDirection == 0)
         {
+            pendingGroupNavigationDirection = 0;
+            groupNavigationHoldTime = 0f;
             groupNavigationLatched = false;
             return;
         }
+
+        int intendedDirection = invertGroupNavigationDirection
+            ? -groupNavigationDirection
+            : groupNavigationDirection;
+
+        if (pendingGroupNavigationDirection != intendedDirection)
+        {
+            pendingGroupNavigationDirection = intendedDirection;
+            groupNavigationHoldTime = 0f;
+            groupNavigationLatched = false;
+        }
+
+        groupNavigationHoldTime += Time.deltaTime;
 
         if (groupNavigationLatched)
         {
             return;
         }
 
+        if (groupNavigationHoldTime < groupNavigationHoldThreshold)
+        {
+            return;
+        }
+
         groupNavigationLatched = true;
 
-        if (groupNavigationDirection > 0)
+        if (intendedDirection > 0)
         {
-            NavigateGroupPrevious();
+            NavigateGroupNext();
         }
         else
         {
-            NavigateGroupNext();
+            NavigateGroupPrevious();
         }
 
         gestureCooldownRemaining = gestureCooldown;

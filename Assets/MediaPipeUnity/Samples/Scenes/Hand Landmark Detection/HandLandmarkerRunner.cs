@@ -264,7 +264,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 !openHandDetected &&
                 _tankController.currentMode == TankHandController.InteractionMode.Group;
             int groupNavigationDirection = groupNavigationAllowed
-                ? GetGroupNavigationDirection(hand)
+                ? GetSidePeaceNavigationDirection(hand)
                 : 0;
 
             _tankController.SetFistDetected(fistDetected);
@@ -331,6 +331,11 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
       private static bool IsFist(NormalizedLandmarks hand)
       {
+          if (GetSidePeaceNavigationDirection(hand) != 0)
+          {
+              return false;
+          }
+
           var wrist = hand.landmarks[0];
           var thumbMcp = hand.landmarks[2];
           var thumbTip = hand.landmarks[4];
@@ -458,8 +463,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               pinkyTip.y < pinkyPip.y;
       }
 
-      private static int GetGroupNavigationDirection(NormalizedLandmarks hand)
+      private static int GetSidePeaceNavigationDirection(NormalizedLandmarks hand)
       {
+          var wrist = hand.landmarks[0];
           var thumbTip = hand.landmarks[4];
 
           var indexMcp = hand.landmarks[5];
@@ -468,14 +474,21 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
           var middleMcp = hand.landmarks[9];
           var middleTip = hand.landmarks[12];
           var ringMcp = hand.landmarks[13];
+          var ringPip = hand.landmarks[14];
           var ringTip = hand.landmarks[16];
           var pinkyMcp = hand.landmarks[17];
+          var pinkyPip = hand.landmarks[18];
           var pinkyTip = hand.landmarks[20];
 
           Vector2 indexDirection = new Vector2(
               indexTip.x - indexMcp.x,
               indexTip.y - indexMcp.y
           );
+          Vector2 middleDirection = new Vector2(
+              middleTip.x - middleMcp.x,
+              middleTip.y - middleMcp.y
+          );
+          Vector2 averageDirection = (indexDirection + middleDirection) * 0.5f;
 
           float indexLength = Vector2.Distance(
               new Vector2(indexTip.x, indexTip.y),
@@ -497,23 +510,50 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               new Vector2(pinkyMcp.x, pinkyMcp.y)
           );
 
-          bool indexExtended = indexLength > 0.12f;
-          bool otherFingersNotExtended =
-              middleLength < indexLength * 0.9f &&
-              ringLength < indexLength * 0.9f &&
-              pinkyLength < indexLength * 0.9f;
-          bool mostlyHorizontal = Mathf.Abs(indexDirection.x) > Mathf.Abs(indexDirection.y) * 1.25f;
+          float palmSize = Vector2.Distance(
+              new Vector2(wrist.x, wrist.y),
+              new Vector2(middleMcp.x, middleMcp.y)
+          );
+          float minimumExtendedLength = Mathf.Max(0.08f, palmSize * 0.55f);
+          float maximumRelaxedLength = Mathf.Max(indexLength, middleLength) * 0.85f;
+          float relaxedCurlTolerance = Mathf.Max(0.02f, palmSize * 0.12f);
+          float minimumPinchDistance = Mathf.Max(0.08f, palmSize * 0.45f);
+
+          bool indexExtended = indexLength > minimumExtendedLength;
+          bool middleExtended = middleLength > minimumExtendedLength;
+          bool indexMostlyHorizontal =
+              Mathf.Abs(indexDirection.x) > Mathf.Abs(indexDirection.y) * 1.45f;
+          bool middleMostlyHorizontal =
+              Mathf.Abs(middleDirection.x) > Mathf.Abs(middleDirection.y) * 1.45f;
+          bool fingersPointSameDirection =
+              Mathf.Sign(indexDirection.x) == Mathf.Sign(middleDirection.x);
+          bool fingersAligned =
+              Vector2.Dot(indexDirection.normalized, middleDirection.normalized) > 0.72f;
+          bool ringRelaxed =
+              ringLength < maximumRelaxedLength ||
+              ringTip.y > ringPip.y - relaxedCurlTolerance;
+          bool pinkyRelaxed =
+              pinkyLength < maximumRelaxedLength ||
+              pinkyTip.y > pinkyPip.y - relaxedCurlTolerance;
           bool notPinching = Vector2.Distance(
               new Vector2(thumbTip.x, thumbTip.y),
               new Vector2(indexTip.x, indexTip.y)
-          ) > 0.08f;
+          ) > minimumPinchDistance;
 
-          if (!indexExtended || !otherFingersNotExtended || !mostlyHorizontal || !notPinching)
+          if (!indexExtended ||
+              !middleExtended ||
+              !indexMostlyHorizontal ||
+              !middleMostlyHorizontal ||
+              !fingersPointSameDirection ||
+              !fingersAligned ||
+              !ringRelaxed ||
+              !pinkyRelaxed ||
+              !notPinching)
           {
               return 0;
           }
 
-          return indexDirection.x > 0f ? 1 : -1;
+          return averageDirection.x > 0f ? 1 : -1;
       }
 
     }

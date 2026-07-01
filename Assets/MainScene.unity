@@ -2760,6 +2760,9 @@ MonoBehaviour:
   maxDistance: 10
   zoomValue: 0.5
   scrollSensitivity: 5
+  normalFieldOfView: 60
+  groupFieldOfView: 85
+  fovSmoothingSpeed: 8
 --- !u!4 &292538303 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6954531691785998512, guid: cf8443763fc34314490f8a3e2f94dd37, type: 3}
@@ -6753,8 +6756,16 @@ MonoBehaviour:
   rotateModel: {fileID: 1247202062}
   zoomController: {fileID: 288177541}
   explodeView: {fileID: 1903861611}
+  groupCameraController: {fileID: 0}
   distanceSensitivity: 3
   smoothingSpeed: 15
+  gestureHoldThreshold: 0.2
+  fistSwitchHoldThreshold: 0.45
+  modeSwitchHoldThreshold: 0.6
+  gestureCooldown: 0.35
+  gestureDropGrace: 0.18
+  groupEntryZoom: 0.15
+  minimumGroupEntryZoom: 0.25
   currentMode: 0
 --- !u!4 &1112551469
 Transform:
@@ -7583,6 +7594,17 @@ MonoBehaviour:
   explodeDistance: 10
   explodeSpeed: 0.5
   useKeyboardControls: 1
+  selectedGroupIndex: 0
+  selectedGroupScale: 1.4
+  unselectedGroupScale: 0.75
+  groupTransitionSpeed: 8
+  groupModeCamera: {fileID: 0}
+  selectedGroupPullDistance: 0.65
+  satelliteRingRadius: 0.72
+  satelliteVerticalRadius: 0.38
+  satelliteBackOffset: 0.18
+  beltSpacingMultiplier: 10
+  leftSideSpacingMultiplier: 1.35
 --- !u!1001 &1252155980
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -10241,6 +10263,18 @@ PrefabInstance:
       propertyPath: m_Name
       value: wheels_6
       objectReference: {fileID: 0}
+    - target: {fileID: 7273704411848003877, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7273704411848003877, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7273704411848003877, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.5
+      objectReference: {fileID: 0}
     - target: {fileID: 8451994382109372378, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       propertyPath: m_Name
       value: turret_1
@@ -11569,6 +11603,17 @@ MonoBehaviour:
   explodeDistance: 0.1
   explodeSpeed: 0.02
   useKeyboardControls: 1
+  selectedGroupIndex: 0
+  selectedGroupScale: 1.4
+  unselectedGroupScale: 0.75
+  groupTransitionSpeed: 8
+  groupModeCamera: {fileID: 0}
+  selectedGroupPullDistance: 0.65
+  satelliteRingRadius: 0.72
+  satelliteVerticalRadius: 0.38
+  satelliteBackOffset: 0.18
+  beltSpacingMultiplier: 10
+  leftSideSpacingMultiplier: 1.35
 --- !u!1001 &1905167186
 PrefabInstance:
   m_ObjectHideFlags: 0
