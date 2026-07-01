@@ -19,6 +19,11 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
   {
 
     private float previousHandSpread = -1f;
+
+    // A deliberate two-hand zoom changes the wrist spread gradually. Pulling a
+    // hand toward/out of frame produces a large single-frame jump; anything above
+    // this (in normalized image units) is treated as a hand leaving, not a zoom.
+    private const float MaxZoomSpreadDeltaPerFrame = 0.06f;
     [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
 
     [SerializeField]
@@ -202,8 +207,8 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             bool singleHandDetected = result.handLandmarks.Count == 1;
             bool twoHandPinching =
                 result.handLandmarks.Count >= 2 &&
-                IsPinching(result.handLandmarks[0]) &&
-                IsPinching(result.handLandmarks[1]);
+                IsPinching(result.handLandmarks[0], TwoHandPinchTriggerConfidence) &&
+                IsPinching(result.handLandmarks[1], TwoHandPinchTriggerConfidence);
             bool modeGestureAllowed =
                 result.handLandmarks.Count >= 1 &&
                 !twoHandPinching;
@@ -275,6 +280,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                     {
                         return;
                     }
+                    // Ignore large jumps: this is a hand being pulled away (e.g. to
+                    // switch to one-hand rotation), not an intentional zoom.
+                    if (Mathf.Abs(deltaSpread) > MaxZoomSpreadDeltaPerFrame)
+                    {
+                        return;
+                    }
                     _tankController.UpdateDistanceDelta(
                         deltaSpread
                     );
@@ -343,6 +354,16 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
           return Mathf.Clamp01(Mathf.InverseLerp(0.5f, 1.0f, ratio));
       }
 
+      // 1 if the finger is curled by EITHER measure: bent at the joints (angle)
+      // or foreshortened/short in the image. Orientation-robust fist cue.
+      private static float FingerCurledEitherWay(
+          NormalizedLandmarks hand, int mcp, int pip, int tip, float palmSize)
+      {
+          float byAngle = FingerCurl(hand.landmarks[mcp], hand.landmarks[pip], hand.landmarks[tip]);
+          float byLength = 1f - FingerExtension(hand.landmarks[mcp], hand.landmarks[tip], palmSize);
+          return Mathf.Max(byAngle, byLength);
+      }
+
       // Combined "this finger is sticking out" score: long AND not bent.
       private static float FingerOpenScore(
           NLandmark mcp,
@@ -376,39 +397,48 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
           ) / 5f;
       }
 
-      // 0 = thumb tucked/curled, 1 = thumb clearly extended (long + straight).
-      private static float ThumbExtension(NormalizedLandmarks hand, float palmSize)
+      // 0 = thumb tip rests on the curled fingers (fist), 1 = thumb tip juts far
+      // from the balled hand (thumbs-up). Measured against the centroid of the
+      // four fingertips, so it is independent of hand orientation and size.
+      private static float ThumbAwayFromFist(NormalizedLandmarks hand, float palmSize)
       {
           if (palmSize < 1e-6f)
           {
               return 0f;
           }
 
-          var cmc = hand.landmarks[1];
-          var mcp = hand.landmarks[2];
-          var tip = hand.landmarks[4];
+          Vector2 fingertipCentroid =
+              (
+                  P2(hand.landmarks[8]) +
+                  P2(hand.landmarks[12]) +
+                  P2(hand.landmarks[16]) +
+                  P2(hand.landmarks[20])
+              ) / 4f;
 
-          float length = Vector2.Distance(P2(tip), P2(mcp)) / palmSize;
-          float lengthScore = Mathf.Clamp01(Mathf.InverseLerp(0.35f, 0.75f, length));
-          float straightness = 1f - FingerCurl(cmc, mcp, tip);
-          return Mathf.Clamp01(lengthScore * straightness);
+          float d = Vector2.Distance(P2(hand.landmarks[4]), fingertipCentroid) / palmSize;
+          return Mathf.Clamp01(Mathf.InverseLerp(0.4f, 0.85f, d));
       }
 
-      // Pinch drives rotation (one hand) and zoom/explode (two hands). Kept a
-      // touch below "very tight" so a natural pinch registers reliably.
+      // One-hand pinch (rotation) is kept strict so it only fires on a deliberate
+      // pinch. Two-hand pinch (zoom/explode) uses a lower bar because it requires
+      // BOTH hands to pass at once, which is otherwise easy to drop out of.
       private const float PinchTriggerConfidence = 0.6f;
+      private const float TwoHandPinchTriggerConfidence = 0.4f;
 
       private static bool IsPinching(NormalizedLandmarks hand)
       {
-          return GetPinchConfidence(hand) >= PinchTriggerConfidence;
+          return IsPinching(hand, PinchTriggerConfidence);
+      }
+
+      private static bool IsPinching(NormalizedLandmarks hand, float threshold)
+      {
+          return GetPinchConfidence(hand) >= threshold;
       }
 
       private static float GetPinchConfidence(NormalizedLandmarks hand)
       {
           var thumbTip = hand.landmarks[4];
           var indexMcp = hand.landmarks[5];
-          var indexPip = hand.landmarks[6];
-          var indexDip = hand.landmarks[7];
           var indexTip = hand.landmarks[8];
 
           float palmSize = PalmSize(hand);
@@ -417,30 +447,27 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               return 0f;
           }
 
-          // Measure thumb<->index distance in 2D (x/y) so it stays on the same
-          // scale as palmSize. MediaPipe's z is noisy and on a different scale,
-          // and mixing it in inflates the distance and starves pinch detection.
+          // Measure thumb-tip <-> index-TIP distance only, in 2D (x/y) so it stays
+          // on the same scale as palmSize. A pinch is specifically the two TIPS
+          // meeting. Do NOT fall back to the index pip/dip joints: in a fist the
+          // thumb wraps down near those joints, which would read as a false pinch.
           Vector2 thumbPoint = P2(thumbTip);
-          float tipDistance = Vector2.Distance(thumbPoint, P2(indexTip));
-          float dipDistance = Vector2.Distance(thumbPoint, P2(indexDip));
-          float pipDistance = Vector2.Distance(thumbPoint, P2(indexPip));
-
-          // The thumb naturally touches somewhere along the index during a pinch,
-          // so take the closest of tip/dip/pip. This also covers the tip being
-          // occluded behind the thumb.
-          float pinchDistance = Mathf.Min(tipDistance, Mathf.Min(dipDistance, pipDistance));
+          float pinchDistance = Vector2.Distance(thumbPoint, P2(indexTip));
 
           // Distance band (as a fraction of palm width) over which the pinch
           // ramps from 0 -> 1. Tighter values require the fingers to be closer
           // together before the pinch registers.
-          float openDistance = palmSize * 0.42f;
-          float closedDistance = palmSize * 0.15f;
+          float openDistance = palmSize * 0.48f;
+          float closedDistance = palmSize * 0.20f;
           float distanceScore = Mathf.Clamp01(Mathf.InverseLerp(openDistance, closedDistance, pinchDistance));
 
-          // Reject only a fully closed fist (index folded flat into the palm). A
-          // real pinch keeps the index partly out, so this gate is gentle.
+          // Gentle fist rejection via the index-extension gate (floor ~0.65 so a
+          // naturally-bent pinch still reads strongly). The main thing keeping a
+          // fist from registering as a pinch is the distance term above: in a fist
+          // the thumb tip and index TIP are not actually together, so distanceScore
+          // stays low and the product lands well under the trigger.
           float indexExtended = FingerExtension(indexMcp, indexTip, palmSize);
-          return Mathf.Clamp01(distanceScore * Mathf.Lerp(0.7f, 1f, indexExtended));
+          return Mathf.Clamp01(distanceScore * Mathf.Lerp(0.65f, 1f, indexExtended));
       }
 
       private static float GetFistConfidence(NormalizedLandmarks hand)
@@ -451,27 +478,23 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               return 0f;
           }
 
-          // All four fingers should be bent...
-          float curl =
+          // Each finger counts as curled if EITHER cue fires: its bend angle is
+          // large (strong for a side-on fist) OR it is foreshortened/short in the
+          // image (strong for a camera-facing fist). Taking the per-finger max
+          // makes the fist read high at any comfortable wrist angle, instead of
+          // forcing the user to twist the hand into one specific orientation.
+          float fistShape =
               (
-                  FingerCurl(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8]) +
-                  FingerCurl(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12]) +
-                  FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]) +
-                  FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20])
+                  FingerCurledEitherWay(hand, 5, 6, 8, palmSize) +
+                  FingerCurledEitherWay(hand, 9, 10, 12, palmSize) +
+                  FingerCurledEitherWay(hand, 13, 14, 16, palmSize) +
+                  FingerCurledEitherWay(hand, 17, 18, 20, palmSize)
               ) / 4f;
 
-          // ...and the fingertips should be tucked into the palm. Combining curl
-          // with compactness rejects a hand that is merely relaxed/half-open.
-          Vector2 palmCenter = PalmCenter(hand);
-          float compact =
-              (
-                  TipCompactness(hand.landmarks[8], palmCenter, palmSize) +
-                  TipCompactness(hand.landmarks[12], palmCenter, palmSize) +
-                  TipCompactness(hand.landmarks[16], palmCenter, palmSize) +
-                  TipCompactness(hand.landmarks[20], palmCenter, palmSize)
-              ) / 4f;
-
-          return Mathf.Clamp01(0.6f * curl + 0.4f * compact);
+          // A jutting thumb means this is a thumbs-up, not a fist. Suppress fist
+          // strongly so the two gestures are mutually exclusive at the source.
+          float thumbSticksOut = ThumbAwayFromFist(hand, palmSize);
+          return Mathf.Clamp01(fistShape * (1f - 0.8f * thumbSticksOut));
       }
 
       private static float GetThumbsUpConfidence(NormalizedLandmarks hand)
@@ -482,10 +505,10 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               return 0f;
           }
 
-          // Thumb extended, the other four fingers curled, and the thumb held
-          // clear of the fist. Orientation is irrelevant here, so a sideways or
-          // tilted thumbs-up still reads correctly.
-          float thumb = ThumbExtension(hand, palmSize);
+          // A thumbs-up and a fist BOTH curl the four fingers; the only difference
+          // is the thumb. The strongest discriminator is how far the thumb TIP is
+          // from the balled-up hand: in a thumbs-up it juts out; in a fist it rests
+          // on the curled fingers. This is orientation- and size-independent.
           float fingersCurled =
               (
                   FingerCurl(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8]) +
@@ -494,14 +517,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                   FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20])
               ) / 4f;
 
-          float separationRatio =
-              Vector2.Distance(P2(hand.landmarks[4]), P2(hand.landmarks[5])) / palmSize;
-          float separation = Mathf.Clamp01(Mathf.InverseLerp(0.3f, 0.6f, separationRatio));
+          float thumbSticksOut = ThumbAwayFromFist(hand, palmSize);
+          float thumbStraight = 1f - FingerCurl(hand.landmarks[2], hand.landmarks[3], hand.landmarks[4]);
+          float thumbSignal = 0.7f * thumbSticksOut + 0.3f * thumbStraight;
 
-          return Mathf.Clamp01(
-              thumb *
-              Mathf.Lerp(0.5f, 1f, fingersCurled) *
-              Mathf.Lerp(0.7f, 1f, separation));
+          // Require the four fingers to be closed, then let the thumb decide.
+          return Mathf.Clamp01(Mathf.Lerp(0.4f, 1f, fingersCurled) * thumbSignal);
       }
 
       private static float GetOpenHandConfidence(NormalizedLandmarks hand)
@@ -512,17 +533,19 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               return 0f;
           }
 
-          // All four fingers long and straight. Pinch suppression is applied in
-          // ClassifyHand so an open palm and a pinch cannot both read high.
-          float openness =
+          // Open palm = all four fingers straight (uncurled). We key off curl
+          // rather than finger length, because the pinky/ring are naturally short
+          // and a length-based score under-rates a fully spread hand. Pinch
+          // suppression is applied in ClassifyHand so a pinch never reads as open.
+          float straightness =
               (
-                  FingerOpenScore(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8], palmSize) +
-                  FingerOpenScore(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12], palmSize) +
-                  FingerOpenScore(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16], palmSize) +
-                  FingerOpenScore(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20], palmSize)
+                  (1f - FingerCurl(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8])) +
+                  (1f - FingerCurl(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12])) +
+                  (1f - FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16])) +
+                  (1f - FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20]))
               ) / 4f;
 
-          return Mathf.Clamp01(openness);
+          return Mathf.Clamp01(straightness);
       }
 
       private static float GetSidePeaceNavigationConfidence(NormalizedLandmarks hand, out int direction)
@@ -548,24 +571,30 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
           // Shape gate: index + middle out, ring + pinky tucked. Uses min() so
           // the weakest part of the shape governs the score (forgiving but still
           // requires the whole shape), instead of a boolean count.
-          float indexOut = FingerOpenScore(indexMcp, indexPip, indexTip, palmSize);
-          float middleOut = FingerOpenScore(middleMcp, middlePip, middleTip, palmSize);
-          float ringCurl = FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]);
-          float pinkyCurl = FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20]);
-          float shape = Mathf.Min(Mathf.Min(indexOut, middleOut), Mathf.Min(ringCurl, pinkyCurl));
+          float fingersOut =
+              (FingerOpenScore(indexMcp, indexPip, indexTip, palmSize) +
+               FingerOpenScore(middleMcp, middlePip, middleTip, palmSize)) * 0.5f;
+          float othersTucked =
+              (FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]) +
+               FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20])) * 0.5f;
 
-          // Quality: the two fingers must point sideways and stay parallel. This
-          // is what makes the gesture a *side* peace rather than a "V" up.
-          float indexHoriz = Horizontalness(indexDirection);
-          float middleHoriz = Horizontalness(middleDirection);
+          // The two fingers must point sideways and stay parallel. This is what
+          // makes the gesture a *side* peace rather than a "V" pointing up.
+          float horizontal = (Horizontalness(indexDirection) + Horizontalness(middleDirection)) * 0.5f;
           float aligned = Mathf.Clamp01(
               Mathf.InverseLerp(0.4f, 0.85f,
                   Vector2.Dot(indexDirection.normalized, middleDirection.normalized)));
           float sameDirection =
               Mathf.Sign(indexDirection.x) == Mathf.Sign(middleDirection.x) ? 1f : 0f;
-          float quality = (indexHoriz + middleHoriz + aligned) / 3f;
 
-          float confidence = Mathf.Clamp01(shape * Mathf.Lerp(0.5f, 1f, quality) * sameDirection);
+          // Weighted sum (forgiving) rather than a min()/product (which let a
+          // single loose finger kill the whole score). othersTucked is weighted
+          // heavily so an open hand held sideways does not read as a nav gesture.
+          float confidence = Mathf.Clamp01(
+              (0.30f * fingersOut +
+               0.35f * othersTucked +
+               0.20f * horizontal +
+               0.15f * aligned) * sameDirection);
 
           if (Mathf.Abs(averageDirection.x) > 1e-4f)
           {

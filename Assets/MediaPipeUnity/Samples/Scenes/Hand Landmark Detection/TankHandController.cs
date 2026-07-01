@@ -21,7 +21,7 @@ public class TankHandController : MonoBehaviour
     [Header("Gesture Confidence")]
     [SerializeField, Range(0f, 1f)] private float fistConfidenceThreshold = 0.62f;
     [SerializeField, Range(0f, 1f)] private float thumbsUpConfidenceThreshold = 0.68f;
-    [SerializeField, Range(0f, 1f)] private float openHandConfidenceThreshold = 0.75f;
+    [SerializeField, Range(0f, 1f)] private float openHandConfidenceThreshold = 0.7f;
     [Header("Gesture Buffering")]
     [SerializeField] private int gestureBufferSize = 15;
     [SerializeField, Range(0f, 1f)] private float modeGestureDominanceRatio = 0.7f;
@@ -654,9 +654,15 @@ public class TankHandController : MonoBehaviour
         }
 
         openHandLatched = true;
-        explodeZoomLocked = true;
+        // Toggle: first open palm locks the current spacing (pinch -> camera zoom),
+        // a second open palm unlocks it (pinch -> part spacing) while KEEPING the
+        // current spacing. targetExplodeAmount is left untouched either way, so the
+        // model stays exactly where it is; only what pinch controls changes.
+        explodeZoomLocked = !explodeZoomLocked;
         currentExplodeAmount = targetExplodeAmount;
-        Debug.Log("Explode locked. Pinch now controls camera zoom.");
+        Debug.Log(explodeZoomLocked
+            ? "Explode locked. Pinch now controls camera zoom."
+            : "Explode unlocked. Pinch now controls part spacing again.");
     }
 
     private void UpdateThumbsUpMode()

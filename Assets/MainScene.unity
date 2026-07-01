@@ -6766,6 +6766,28 @@ MonoBehaviour:
   gestureDropGrace: 0.18
   groupEntryZoom: 0.15
   minimumGroupEntryZoom: 0.25
+  fistConfidenceThreshold: 0.62
+  thumbsUpConfidenceThreshold: 0.68
+  openHandConfidenceThreshold: 0.75
+  gestureBufferSize: 15
+  modeGestureDominanceRatio: 0.7
+  modeExitDominanceRatio: 0.82
+  modeExitConfidenceBonus: 0.12
+  actionGestureDominanceRatio: 0.6
+  groupNavigationHoldThreshold: 0.18
+  groupNavigationConfidenceThreshold: 0.72
+  groupNavigationDominanceRatio: 0.6
+  invertGroupNavigationDirection: 0
+  lastPinchConfidence: 0
+  lastFistConfidence: 0
+  lastThumbsUpConfidence: 0
+  lastOpenHandConfidence: 0
+  lastGroupNavigationConfidence: 0
+  lastGroupNavigationDirection: 0
+  lastRawGestureIntent: 0
+  dominantGestureIntent: 0
+  dominantGestureRatio: 0
+  dominantGestureConfidence: 0
   currentMode: 0
 --- !u!4 &1112551469
 Transform:
@@ -7585,7 +7607,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1247202060}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5366f7ae6741453489882053ea548dcb, type: 3}
   m_Name: 
@@ -7605,6 +7627,22 @@ MonoBehaviour:
   satelliteBackOffset: 0.18
   beltSpacingMultiplier: 10
   leftSideSpacingMultiplier: 1.35
+--- !u!114 &1247202065
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1247202060}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81fd61b4c31bd464ab477febf4e1ac1f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GestureDebugOverlay
+  controller: {fileID: 1112551468}
+  showOverlay: 1
+  origin: {x: 16, y: 16}
+  width: 320
 --- !u!1001 &1252155980
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -10302,6 +10340,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -4876808054094043266, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1247202064}
+    - targetCorrespondingSourceObject: {fileID: -4876808054094043266, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1247202065}
     - targetCorrespondingSourceObject: {fileID: -5179829617493887363, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1903861611}
