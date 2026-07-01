@@ -22,7 +22,7 @@ public class NetworkModelSync : MonoBehaviour
 {
     public bool isHost = false;
 
-    public string serverIP = "ws://127.0.0.1:8080";
+    public string serverIP = "ws://255.255.255.240:8080";
 
     private WebSocket websocket;
 
