@@ -1,108 +1,106 @@
 using UnityEngine;
 using NativeWebSocket;
 using System;
+using System.Text;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.NetworkInformation;
 
 [Serializable]
-public class TransformPacket
+public class TankState
 {
-    public float px;
-    public float py;
-    public float pz;
-
     public float rx;
     public float ry;
     public float rz;
 
-    public float sx;
-    public float sy;
-    public float sz;
+    public float explode;
 }
 
 public class NetworkModelSync : MonoBehaviour
 {
+    [Header("Networking")]
     public bool isHost = false;
 
-    public string serverIP = "ws://172.20.10.2:8080";
+    [Tooltip("Clients should enter the Host's IP here.\nThe Host will automatically overwrite this with its own IP.")]
+    public string serverIP = "ws://127.0.0.1:8080";
+
+    [Header("References")]
+    public ExplodeView explodeView;
 
     private WebSocket websocket;
 
-    private Vector3 targetPosition;
     private Quaternion targetRotation;
-    private Vector3 targetScale;
+    private float targetExplode;
 
-    float sendTimer;
+    private bool hasReceivedData = false;
+
+    private Quaternion lastRotation;
+    private float lastExplode;
+
+    private float sendTimer = 0f;
+    private const float sendRate = 0.05f;
 
     async void Start()
     {
+        targetRotation = transform.rotation;
+
+        if (explodeView != null)
+            targetExplode = explodeView.explodeAmount;
+
+        // Host automatically connects to itself
+        if (isHost)
+        {
+            string ip = GetLocalIPAddress();
+
+            serverIP = "ws://" + ip + ":8080";
+
+            Debug.Log("====================================");
+            Debug.Log("HOST IP:");
+            Debug.Log(ip);
+            Debug.Log("Clients connect to:");
+            Debug.Log(serverIP);
+            Debug.Log("====================================");
+        }
+
         websocket = new WebSocket(serverIP);
 
         websocket.OnOpen += () =>
         {
-            Debug.Log("Connected");
+            Debug.Log("Connected to " + serverIP);
         };
 
         websocket.OnError += (e) =>
         {
-            Debug.Log(e);
+            Debug.LogError("WebSocket Error: " + e);
         };
 
         websocket.OnClose += (e) =>
         {
-            Debug.Log("Closed");
+            Debug.Log("Disconnected");
         };
 
         websocket.OnMessage += (bytes) =>
         {
-            string json = System.Text.Encoding.UTF8.GetString(bytes);
+            string json = Encoding.UTF8.GetString(bytes);
 
-            TransformPacket packet =
-                JsonUtility.FromJson<TransformPacket>(json);
-
-            targetPosition = new Vector3(
-                packet.px,
-                packet.py,
-                packet.pz);
+            TankState state = JsonUtility.FromJson<TankState>(json);
 
             targetRotation = Quaternion.Euler(
-                packet.rx,
-                packet.ry,
-                packet.rz);
+                state.rx,
+                state.ry,
+                state.rz);
 
-            targetScale = new Vector3(
-                packet.sx,
-                packet.sy,
-                packet.sz);
+            targetExplode = state.explode;
+
+            hasReceivedData = true;
         };
 
         await websocket.Connect();
 
-        targetPosition = transform.position;
-        targetRotation = transform.rotation;
-        targetScale = transform.localScale;
-    }
+        lastRotation = transform.rotation;
 
-    async void SendTransform()
-    {
-        if (websocket.State != WebSocketState.Open)
-            return;
-
-        TransformPacket packet = new TransformPacket();
-
-        packet.px = transform.position.x;
-        packet.py = transform.position.y;
-        packet.pz = transform.position.z;
-
-        packet.rx = transform.eulerAngles.x;
-        packet.ry = transform.eulerAngles.y;
-        packet.rz = transform.eulerAngles.z;
-
-        packet.sx = transform.localScale.x;
-        packet.sy = transform.localScale.y;
-        packet.sz = transform.localScale.z;
-
-        string json = JsonUtility.ToJson(packet);
-
-        await websocket.SendText(json);
+        if (explodeView != null)
+            lastExplode = explodeView.explodeAmount;
     }
 
     void Update()
@@ -111,41 +109,104 @@ public class NetworkModelSync : MonoBehaviour
         websocket.DispatchMessageQueue();
 #endif
 
+        if (websocket == null)
+            return;
+
         if (isHost)
         {
             sendTimer += Time.deltaTime;
 
-            if (sendTimer > 0.05f)
+            if (sendTimer >= sendRate)
             {
                 sendTimer = 0f;
-                SendTransform();
+
+                bool rotationChanged =
+                    Quaternion.Angle(lastRotation, transform.rotation) > 0.1f;
+
+                bool explodeChanged = false;
+
+                if (explodeView != null)
+                    explodeChanged =
+                        Mathf.Abs(lastExplode - explodeView.explodeAmount) > 0.001f;
+
+                if (rotationChanged || explodeChanged)
+                {
+                    SendState();
+
+                    lastRotation = transform.rotation;
+
+                    if (explodeView != null)
+                        lastExplode = explodeView.explodeAmount;
+                }
             }
         }
         else
         {
-            transform.position =
-                Vector3.Lerp(
-                    transform.position,
-                    targetPosition,
-                    Time.deltaTime * 15);
+            if (!hasReceivedData)
+                return;
 
-            transform.rotation =
-                Quaternion.Slerp(
-                    transform.rotation,
-                    targetRotation,
-                    Time.deltaTime * 15);
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                targetRotation,
+                Time.deltaTime * 15f);
 
-            transform.localScale =
-                Vector3.Lerp(
-                    transform.localScale,
-                    targetScale,
-                    Time.deltaTime * 15);
+            if (explodeView != null)
+            {
+                explodeView.SetExplodeAmount(
+                    Mathf.Lerp(
+                        explodeView.explodeAmount,
+                        targetExplode,
+                        Time.deltaTime * 15f));
+            }
         }
+    }
+
+    async void SendState()
+    {
+        if (websocket.State != WebSocketState.Open)
+            return;
+
+        TankState state = new TankState();
+
+        Vector3 euler = transform.eulerAngles;
+
+        state.rx = euler.x;
+        state.ry = euler.y;
+        state.rz = euler.z;
+
+        if (explodeView != null)
+            state.explode = explodeView.explodeAmount;
+
+        string json = JsonUtility.ToJson(state);
+
+        await websocket.SendText(json);
     }
 
     async void OnApplicationQuit()
     {
         if (websocket != null)
             await websocket.Close();
+    }
+
+    string GetLocalIPAddress()
+    {
+        foreach (NetworkInterface network in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (network.OperationalStatus != OperationalStatus.Up)
+                continue;
+
+            if (network.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                continue;
+
+            foreach (UnicastIPAddressInformation ip in network.GetIPProperties().UnicastAddresses)
+            {
+                if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.Address.ToString();
+                }
+            }
+        }
+
+        return "127.0.0.1";
     }
 }

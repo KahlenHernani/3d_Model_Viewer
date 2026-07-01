@@ -7564,7 +7564,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b63607bbb66db7345a4e4122766eb00c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DragRotateModel
-  rotationSpeed: 0.2
+  rotationSpeed: 20
   rotationDamping: 4
   useLeftMouseButton: 1
 --- !u!114 &1247202064
@@ -10067,6 +10067,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -5179829617493887363, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1903861611}
+    - targetCorrespondingSourceObject: {fileID: -5179829617493887363, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1903861612}
   m_SourcePrefab: {fileID: 100100000, guid: adbfa1807ae4b94449205ff86e03bee7, type: 3}
 --- !u!4 &1738954388 stripped
 Transform:
@@ -11364,7 +11367,21 @@ MonoBehaviour:
   explodeAmount: 0.693
   explodeDistance: 0.1
   explodeSpeed: 0.02
-  useKeyboardControls: 1
+  useKeyboardControls: 0
+--- !u!114 &1903861612
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1903861609}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ead44b1396296e34ba3f0959555e561e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkModelSync
+  isHost: 1
+  serverIP: ws://172.20.10.2:8080
 --- !u!1001 &1905167186
 PrefabInstance:
   m_ObjectHideFlags: 0
