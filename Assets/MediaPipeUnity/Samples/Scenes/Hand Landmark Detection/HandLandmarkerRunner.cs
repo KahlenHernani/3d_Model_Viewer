@@ -9,6 +9,9 @@ using Mediapipe.Tasks.Vision.HandLandmarker;
 using Mediapipe.Tasks.Components.Containers;
 using UnityEngine;
 using UnityEngine.Rendering;
+// Disambiguate: a bare "NormalizedLandmark" resolves to Mediapipe.NormalizedLandmark
+// inside this namespace, but hand.landmarks[i] is the Tasks container type.
+using NLandmark = Mediapipe.Tasks.Components.Containers.NormalizedLandmark;
 
 namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 {
@@ -296,12 +299,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
       // the hand is tilted or rotated.
       // ---------------------------------------------------------------------
 
-      private static Vector2 P2(NormalizedLandmark lm)
+      private static Vector2 P2(NLandmark lm)
       {
           return new Vector2(lm.x, lm.y);
       }
 
-      private static Vector3 P3(NormalizedLandmark lm)
+      private static Vector3 P3(NLandmark lm)
       {
           return new Vector3(lm.x, lm.y, lm.z);
       }
@@ -314,7 +317,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
       // 0 = finger straight, 1 = finger fully curled. Based on the angle between
       // the proximal (mcp->pip) and distal (pip->tip) bone vectors, so it does
       // not depend on hand orientation.
-      private static float FingerCurl(NormalizedLandmark mcp, NormalizedLandmark pip, NormalizedLandmark tip)
+      private static float FingerCurl(NLandmark mcp, NLandmark pip, NLandmark tip)
       {
           Vector2 proximal = P2(pip) - P2(mcp);
           Vector2 distal = P2(tip) - P2(pip);
@@ -329,7 +332,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
       // 0 = tip close to its knuckle (curled/short), 1 = tip far from knuckle
       // (extended), normalized by palm size so it is scale invariant.
-      private static float FingerExtension(NormalizedLandmark mcp, NormalizedLandmark tip, float palmSize)
+      private static float FingerExtension(NLandmark mcp, NLandmark tip, float palmSize)
       {
           if (palmSize < 1e-6f)
           {
@@ -342,16 +345,16 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
       // Combined "this finger is sticking out" score: long AND not bent.
       private static float FingerOpenScore(
-          NormalizedLandmark mcp,
-          NormalizedLandmark pip,
-          NormalizedLandmark tip,
+          NLandmark mcp,
+          NLandmark pip,
+          NLandmark tip,
           float palmSize)
       {
           return FingerExtension(mcp, tip, palmSize) * (1f - FingerCurl(mcp, pip, tip));
       }
 
       // 0 = fingertip far from palm center, 1 = tucked into the palm.
-      private static float TipCompactness(NormalizedLandmark tip, Vector2 palmCenter, float palmSize)
+      private static float TipCompactness(NLandmark tip, Vector2 palmCenter, float palmSize)
       {
           if (palmSize < 1e-6f)
           {
@@ -391,9 +394,13 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
           return Mathf.Clamp01(lengthScore * straightness);
       }
 
+      // Pinch drives rotation (one hand) and zoom/explode (two hands). Kept a
+      // touch below "very tight" so a natural pinch registers reliably.
+      private const float PinchTriggerConfidence = 0.6f;
+
       private static bool IsPinching(NormalizedLandmarks hand)
       {
-          return GetPinchConfidence(hand) >= 0.7f;
+          return GetPinchConfidence(hand) >= PinchTriggerConfidence;
       }
 
       private static float GetPinchConfidence(NormalizedLandmarks hand)
@@ -410,29 +417,30 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
               return 0f;
           }
 
-          // Use 3D distance (includes z / depth) so the pinch is robust to the
-          // thumb and index crossing in front of one another.
-          Vector3 thumbPoint = P3(thumbTip);
-          float tipDistance = Vector3.Distance(thumbPoint, P3(indexTip));
-          float dipDistance = Vector3.Distance(thumbPoint, P3(indexDip));
-          float pipDistance = Vector3.Distance(thumbPoint, P3(indexPip));
+          // Measure thumb<->index distance in 2D (x/y) so it stays on the same
+          // scale as palmSize. MediaPipe's z is noisy and on a different scale,
+          // and mixing it in inflates the distance and starves pinch detection.
+          Vector2 thumbPoint = P2(thumbTip);
+          float tipDistance = Vector2.Distance(thumbPoint, P2(indexTip));
+          float dipDistance = Vector2.Distance(thumbPoint, P2(indexDip));
+          float pipDistance = Vector2.Distance(thumbPoint, P2(indexPip));
 
-          // Occlusion fallback: when the index is bent (or the tip is hidden),
-          // allow the nearer index joints to stand in for the tip.
-          float indexLength = Vector2.Distance(P2(indexTip), P2(indexMcp));
-          bool indexBent = indexLength < palmSize * 0.6f;
-          float pinchDistance = indexBent
-              ? Mathf.Min(tipDistance, Mathf.Min(dipDistance, pipDistance))
-              : tipDistance;
+          // The thumb naturally touches somewhere along the index during a pinch,
+          // so take the closest of tip/dip/pip. This also covers the tip being
+          // occluded behind the thumb.
+          float pinchDistance = Mathf.Min(tipDistance, Mathf.Min(dipDistance, pipDistance));
 
-          float openDistance = palmSize * 0.85f;
-          float closedDistance = palmSize * 0.35f;
+          // Distance band (as a fraction of palm width) over which the pinch
+          // ramps from 0 -> 1. Tighter values require the fingers to be closer
+          // together before the pinch registers.
+          float openDistance = palmSize * 0.42f;
+          float closedDistance = palmSize * 0.15f;
           float distanceScore = Mathf.Clamp01(Mathf.InverseLerp(openDistance, closedDistance, pinchDistance));
 
-          // Gate on index extension so a closed fist (thumb resting near the
-          // fingers) does not masquerade as a pinch.
+          // Reject only a fully closed fist (index folded flat into the palm). A
+          // real pinch keeps the index partly out, so this gate is gentle.
           float indexExtended = FingerExtension(indexMcp, indexTip, palmSize);
-          return Mathf.Clamp01(distanceScore * Mathf.Lerp(0.35f, 1f, indexExtended));
+          return Mathf.Clamp01(distanceScore * Mathf.Lerp(0.7f, 1f, indexExtended));
       }
 
       private static float GetFistConfidence(NormalizedLandmarks hand)
