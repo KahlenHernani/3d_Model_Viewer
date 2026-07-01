@@ -34,6 +34,7 @@ public class TankHandController : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float groupNavigationDominanceRatio = 0.6f;
     [SerializeField] private bool invertGroupNavigationDirection = false;
     [Header("Gesture Debug")]
+    [SerializeField, Range(0f, 1f)] private float lastPinchConfidence = 0f;
     [SerializeField, Range(0f, 1f)] private float lastFistConfidence = 0f;
     [SerializeField, Range(0f, 1f)] private float lastThumbsUpConfidence = 0f;
     [SerializeField, Range(0f, 1f)] private float lastOpenHandConfidence = 0f;
@@ -267,6 +268,30 @@ public class TankHandController : MonoBehaviour
             pendingGestureFrameVersion++;
         }
     }
+
+    // Pinch is used internally by the runner (rotation / two-hand zoom); it is
+    // forwarded here only so the debug overlay can display it. It does not feed
+    // the gesture buffer or mode switching.
+    public void SetPinchConfidence(float pinchConfidence)
+    {
+        lastPinchConfidence = Mathf.Clamp01(pinchConfidence);
+    }
+
+    // ---- Read-only debug accessors (consumed by GestureDebugOverlay) ----
+    public float DebugPinchConfidence => lastPinchConfidence;
+    public float DebugFistConfidence => lastFistConfidence;
+    public float DebugThumbsUpConfidence => lastThumbsUpConfidence;
+    public float DebugOpenHandConfidence => lastOpenHandConfidence;
+    public float DebugGroupNavigationConfidence => lastGroupNavigationConfidence;
+    public int DebugGroupNavigationDirection => lastGroupNavigationDirection;
+    public string DebugRawGestureIntent => lastRawGestureIntent.ToString();
+    public string DebugDominantGestureIntent => dominantGestureIntent.ToString();
+    public float DebugDominantGestureRatio => dominantGestureRatio;
+    public float DebugDominantGestureConfidence => dominantGestureConfidence;
+    public int DebugGestureFrameCount => gestureFrameCount;
+    public int DebugGestureBufferSize => Mathf.Max(1, gestureBufferSize);
+    public float DebugGestureCooldownRemaining => gestureCooldownRemaining;
+    public InteractionMode DebugCurrentMode => currentMode;
 
     private void RefreshGestureDetections()
     {

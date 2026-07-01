@@ -170,6 +170,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             if (result.handLandmarks == null || result.handLandmarks.Count == 0)
             {
                 _tankController.SetGestureConfidences(0f, 0f, 0f, 0, 0f);
+                _tankController.SetPinchConfidence(0f);
                 previousHandSpread = -1f;
                 return;
             }
@@ -206,26 +207,23 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             float thumbsUpConfidence = 0f;
             float openHandConfidence = 0f;
             float fistConfidence = 0f;
+            float pinchConfidence = 0f;
 
             if (modeGestureAllowed)
             {
                 for (int i = 0; i < result.handLandmarks.Count; i++)
                 {
-                    NormalizedLandmarks candidateHand = result.handLandmarks[i];
-                    thumbsUpConfidence = Mathf.Max(
-                        thumbsUpConfidence,
-                        GetThumbsUpConfidence(candidateHand)
-                    );
-                    openHandConfidence = Mathf.Max(
-                        openHandConfidence,
-                        GetOpenHandConfidence(candidateHand)
-                    );
-                    fistConfidence = Mathf.Max(
-                        fistConfidence,
-                        GetFistConfidence(candidateHand)
-                    );
+                    // ClassifyHand computes all gesture scores together and applies
+                    // mutual-exclusivity suppression so overlapping gestures compete.
+                    HandGestureScores scores = ClassifyHand(result.handLandmarks[i]);
+                    thumbsUpConfidence = Mathf.Max(thumbsUpConfidence, scores.thumbsUp);
+                    openHandConfidence = Mathf.Max(openHandConfidence, scores.openHand);
+                    fistConfidence = Mathf.Max(fistConfidence, scores.fist);
+                    pinchConfidence = Mathf.Max(pinchConfidence, scores.pinch);
                 }
             }
+
+            _tankController.SetPinchConfidence(pinchConfidence);
 
             bool groupNavigationAllowed =
                 singleHandDetected &&
@@ -289,6 +287,110 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             }
         }
 
+      // ---------------------------------------------------------------------
+      // Orientation-invariant landmark helpers.
+      //
+      // All gesture math below is built from these so that curl / extension are
+      // decided by bone geometry (angles + palm-relative lengths) rather than
+      // image-space "up" (tip.y < pip.y). That keeps the classifiers stable when
+      // the hand is tilted or rotated.
+      // ---------------------------------------------------------------------
+
+      private static Vector2 P2(NormalizedLandmark lm)
+      {
+          return new Vector2(lm.x, lm.y);
+      }
+
+      private static Vector3 P3(NormalizedLandmark lm)
+      {
+          return new Vector3(lm.x, lm.y, lm.z);
+      }
+
+      private static float PalmSize(NormalizedLandmarks hand)
+      {
+          return Vector2.Distance(P2(hand.landmarks[0]), P2(hand.landmarks[9]));
+      }
+
+      // 0 = finger straight, 1 = finger fully curled. Based on the angle between
+      // the proximal (mcp->pip) and distal (pip->tip) bone vectors, so it does
+      // not depend on hand orientation.
+      private static float FingerCurl(NormalizedLandmark mcp, NormalizedLandmark pip, NormalizedLandmark tip)
+      {
+          Vector2 proximal = P2(pip) - P2(mcp);
+          Vector2 distal = P2(tip) - P2(pip);
+          if (proximal.sqrMagnitude < 1e-8f || distal.sqrMagnitude < 1e-8f)
+          {
+              return 0f;
+          }
+
+          float angle = Vector2.Angle(proximal, distal); // 0 (straight) .. 180 (folded)
+          return Mathf.Clamp01(Mathf.InverseLerp(20f, 100f, angle));
+      }
+
+      // 0 = tip close to its knuckle (curled/short), 1 = tip far from knuckle
+      // (extended), normalized by palm size so it is scale invariant.
+      private static float FingerExtension(NormalizedLandmark mcp, NormalizedLandmark tip, float palmSize)
+      {
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
+
+          float ratio = Vector2.Distance(P2(tip), P2(mcp)) / palmSize;
+          return Mathf.Clamp01(Mathf.InverseLerp(0.5f, 1.0f, ratio));
+      }
+
+      // Combined "this finger is sticking out" score: long AND not bent.
+      private static float FingerOpenScore(
+          NormalizedLandmark mcp,
+          NormalizedLandmark pip,
+          NormalizedLandmark tip,
+          float palmSize)
+      {
+          return FingerExtension(mcp, tip, palmSize) * (1f - FingerCurl(mcp, pip, tip));
+      }
+
+      // 0 = fingertip far from palm center, 1 = tucked into the palm.
+      private static float TipCompactness(NormalizedLandmark tip, Vector2 palmCenter, float palmSize)
+      {
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
+
+          float d = Vector2.Distance(P2(tip), palmCenter) / palmSize;
+          return Mathf.Clamp01(Mathf.InverseLerp(1.1f, 0.5f, d));
+      }
+
+      private static Vector2 PalmCenter(NormalizedLandmarks hand)
+      {
+          return (
+              P2(hand.landmarks[0]) +
+              P2(hand.landmarks[5]) +
+              P2(hand.landmarks[9]) +
+              P2(hand.landmarks[13]) +
+              P2(hand.landmarks[17])
+          ) / 5f;
+      }
+
+      // 0 = thumb tucked/curled, 1 = thumb clearly extended (long + straight).
+      private static float ThumbExtension(NormalizedLandmarks hand, float palmSize)
+      {
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
+
+          var cmc = hand.landmarks[1];
+          var mcp = hand.landmarks[2];
+          var tip = hand.landmarks[4];
+
+          float length = Vector2.Distance(P2(tip), P2(mcp)) / palmSize;
+          float lengthScore = Mathf.Clamp01(Mathf.InverseLerp(0.35f, 0.75f, length));
+          float straightness = 1f - FingerCurl(cmc, mcp, tip);
+          return Mathf.Clamp01(lengthScore * straightness);
+      }
+
       private static bool IsPinching(NormalizedLandmarks hand)
       {
           return GetPinchConfidence(hand) >= 0.7f;
@@ -296,312 +398,216 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
       private static float GetPinchConfidence(NormalizedLandmarks hand)
       {
-          var wrist = hand.landmarks[0];
           var thumbTip = hand.landmarks[4];
           var indexMcp = hand.landmarks[5];
           var indexPip = hand.landmarks[6];
           var indexDip = hand.landmarks[7];
           var indexTip = hand.landmarks[8];
-          var middleMcp = hand.landmarks[9];
 
-          float palmSize = Vector2.Distance(
-              new Vector2(wrist.x, wrist.y),
-              new Vector2(middleMcp.x, middleMcp.y)
-          );
-          float indexLength = Vector2.Distance(
-              new Vector2(indexTip.x, indexTip.y),
-              new Vector2(indexMcp.x, indexMcp.y)
-          );
-          Vector2 thumbPoint = new Vector2(thumbTip.x, thumbTip.y);
-          float tipDistance = Vector2.Distance(
-              thumbPoint,
-              new Vector2(indexTip.x, indexTip.y)
-          );
-          float dipDistance = Vector2.Distance(
-              thumbPoint,
-              new Vector2(indexDip.x, indexDip.y)
-          );
-          float pipDistance = Vector2.Distance(
-              thumbPoint,
-              new Vector2(indexPip.x, indexPip.y)
-          );
-          bool indexBentEnoughForJointFallback = indexLength < palmSize * 0.6f;
-          float jointFallbackDistance = Mathf.Min(dipDistance, pipDistance);
-          float pinchDistance = indexBentEnoughForJointFallback
-              ? Mathf.Min(tipDistance, jointFallbackDistance)
+          float palmSize = PalmSize(hand);
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
+
+          // Use 3D distance (includes z / depth) so the pinch is robust to the
+          // thumb and index crossing in front of one another.
+          Vector3 thumbPoint = P3(thumbTip);
+          float tipDistance = Vector3.Distance(thumbPoint, P3(indexTip));
+          float dipDistance = Vector3.Distance(thumbPoint, P3(indexDip));
+          float pipDistance = Vector3.Distance(thumbPoint, P3(indexPip));
+
+          // Occlusion fallback: when the index is bent (or the tip is hidden),
+          // allow the nearer index joints to stand in for the tip.
+          float indexLength = Vector2.Distance(P2(indexTip), P2(indexMcp));
+          bool indexBent = indexLength < palmSize * 0.6f;
+          float pinchDistance = indexBent
+              ? Mathf.Min(tipDistance, Mathf.Min(dipDistance, pipDistance))
               : tipDistance;
-          float openDistance = Mathf.Max(0.09f, palmSize * 0.85f);
-          float closedDistance = Mathf.Max(0.04f, palmSize * 0.42f);
-          float distanceScore = Mathf.InverseLerp(openDistance, closedDistance, pinchDistance);
-          float indexExtendedScore = Mathf.InverseLerp(palmSize * 0.15f, palmSize * 0.45f, indexLength);
 
-          return Mathf.Clamp01(distanceScore * indexExtendedScore);
+          float openDistance = palmSize * 0.85f;
+          float closedDistance = palmSize * 0.35f;
+          float distanceScore = Mathf.Clamp01(Mathf.InverseLerp(openDistance, closedDistance, pinchDistance));
+
+          // Gate on index extension so a closed fist (thumb resting near the
+          // fingers) does not masquerade as a pinch.
+          float indexExtended = FingerExtension(indexMcp, indexTip, palmSize);
+          return Mathf.Clamp01(distanceScore * Mathf.Lerp(0.35f, 1f, indexExtended));
       }
 
       private static float GetFistConfidence(NormalizedLandmarks hand)
       {
-          int sidePeaceDirection;
-          if (GetSidePeaceNavigationConfidence(hand, out sidePeaceDirection) >= 0.72f)
+          float palmSize = PalmSize(hand);
+          if (palmSize < 1e-6f)
           {
               return 0f;
           }
 
-          var wrist = hand.landmarks[0];
-          var thumbMcp = hand.landmarks[2];
-          var thumbTip = hand.landmarks[4];
-          var indexMcp = hand.landmarks[5];
-          var indexPip = hand.landmarks[6];
-          var indexTip = hand.landmarks[8];
-          var middleMcp = hand.landmarks[9];
-          var middlePip = hand.landmarks[10];
-          var middleTip = hand.landmarks[12];
-          var ringMcp = hand.landmarks[13];
-          var ringPip = hand.landmarks[14];
-          var ringTip = hand.landmarks[16];
-          var pinkyMcp = hand.landmarks[17];
-          var pinkyPip = hand.landmarks[18];
-          var pinkyTip = hand.landmarks[20];
-
-          float palmSize = Vector2.Distance(
-              new Vector2(wrist.x, wrist.y),
-              new Vector2(middleMcp.x, middleMcp.y)
-          );
-
-          Vector2 wristPoint = new Vector2(wrist.x, wrist.y);
-          Vector2 palmCenter =
+          // All four fingers should be bent...
+          float curl =
               (
-                  wristPoint +
-                  new Vector2(indexMcp.x, indexMcp.y) +
-                  new Vector2(middleMcp.x, middleMcp.y) +
-                  new Vector2(ringMcp.x, ringMcp.y) +
-                  new Vector2(pinkyMcp.x, pinkyMcp.y)
-              ) / 5f;
-          float curlTolerance = palmSize * 0.28f;
-          float compactFingerLength = palmSize * 0.82f;
-          float compactPalmDistance = palmSize * 0.95f;
-          bool indexCurled =
-              indexTip.y > indexPip.y - curlTolerance ||
-              Vector2.Distance(new Vector2(indexTip.x, indexTip.y), wristPoint) <
-              Vector2.Distance(new Vector2(indexPip.x, indexPip.y), wristPoint) + curlTolerance ||
-              Vector2.Distance(new Vector2(indexTip.x, indexTip.y), new Vector2(indexMcp.x, indexMcp.y)) < compactFingerLength ||
-              Vector2.Distance(new Vector2(indexTip.x, indexTip.y), palmCenter) < compactPalmDistance;
-          bool middleCurled =
-              middleTip.y > middlePip.y - curlTolerance ||
-              Vector2.Distance(new Vector2(middleTip.x, middleTip.y), wristPoint) <
-              Vector2.Distance(new Vector2(middlePip.x, middlePip.y), wristPoint) + curlTolerance ||
-              Vector2.Distance(new Vector2(middleTip.x, middleTip.y), new Vector2(middleMcp.x, middleMcp.y)) < compactFingerLength ||
-              Vector2.Distance(new Vector2(middleTip.x, middleTip.y), palmCenter) < compactPalmDistance;
-          bool ringCurled =
-              ringTip.y > ringPip.y - curlTolerance ||
-              Vector2.Distance(new Vector2(ringTip.x, ringTip.y), wristPoint) <
-              Vector2.Distance(new Vector2(ringPip.x, ringPip.y), wristPoint) + curlTolerance ||
-              Vector2.Distance(new Vector2(ringTip.x, ringTip.y), new Vector2(ringMcp.x, ringMcp.y)) < compactFingerLength ||
-              Vector2.Distance(new Vector2(ringTip.x, ringTip.y), palmCenter) < compactPalmDistance;
-          bool pinkyCurled =
-              pinkyTip.y > pinkyPip.y - curlTolerance ||
-              Vector2.Distance(new Vector2(pinkyTip.x, pinkyTip.y), wristPoint) <
-              Vector2.Distance(new Vector2(pinkyPip.x, pinkyPip.y), wristPoint) + curlTolerance ||
-              Vector2.Distance(new Vector2(pinkyTip.x, pinkyTip.y), new Vector2(pinkyMcp.x, pinkyMcp.y)) < compactFingerLength ||
-              Vector2.Distance(new Vector2(pinkyTip.x, pinkyTip.y), palmCenter) < compactPalmDistance;
-          int curledFingerCount =
-              (indexCurled ? 1 : 0) +
-              (middleCurled ? 1 : 0) +
-              (ringCurled ? 1 : 0) +
-              (pinkyCurled ? 1 : 0);
+                  FingerCurl(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8]) +
+                  FingerCurl(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12]) +
+                  FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]) +
+                  FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20])
+              ) / 4f;
 
-          Vector2 thumbDirection = new Vector2(
-              thumbTip.x - thumbMcp.x,
-              thumbTip.y - thumbMcp.y
-          );
-          bool thumbClearlyRaised =
-              thumbTip.y < wrist.y - palmSize * 0.28f &&
-              thumbDirection.y < -palmSize * 0.4f &&
-              Mathf.Abs(thumbDirection.y) > Mathf.Abs(thumbDirection.x) * 1.25f;
+          // ...and the fingertips should be tucked into the palm. Combining curl
+          // with compactness rejects a hand that is merely relaxed/half-open.
+          Vector2 palmCenter = PalmCenter(hand);
+          float compact =
+              (
+                  TipCompactness(hand.landmarks[8], palmCenter, palmSize) +
+                  TipCompactness(hand.landmarks[12], palmCenter, palmSize) +
+                  TipCompactness(hand.landmarks[16], palmCenter, palmSize) +
+                  TipCompactness(hand.landmarks[20], palmCenter, palmSize)
+              ) / 4f;
 
-          float confidence = Mathf.Clamp01(curledFingerCount / 4f);
-          if (thumbClearlyRaised)
-          {
-              confidence = Mathf.Min(confidence, 0.25f);
-          }
-
-          return confidence;
+          return Mathf.Clamp01(0.6f * curl + 0.4f * compact);
       }
 
       private static float GetThumbsUpConfidence(NormalizedLandmarks hand)
       {
-          var wrist = hand.landmarks[0];
-          var thumbMcp = hand.landmarks[2];
-          var thumbTip = hand.landmarks[4];
-          var indexMcp = hand.landmarks[5];
-          var indexPip = hand.landmarks[6];
-          var indexTip = hand.landmarks[8];
-          var middleMcp = hand.landmarks[9];
-          var middlePip = hand.landmarks[10];
-          var middleTip = hand.landmarks[12];
-          var ringPip = hand.landmarks[14];
-          var ringTip = hand.landmarks[16];
-          var pinkyPip = hand.landmarks[18];
-          var pinkyTip = hand.landmarks[20];
-
-          float palmSize = Vector2.Distance(
-              new Vector2(wrist.x, wrist.y),
-              new Vector2(middleMcp.x, middleMcp.y)
-          );
-          Vector2 thumbDirection = new Vector2(
-              thumbTip.x - thumbMcp.x,
-              thumbTip.y - thumbMcp.y
-          );
-
-          bool thumbRaised =
-              thumbTip.y < thumbMcp.y - palmSize * 0.12f &&
-              thumbTip.y < wrist.y - palmSize * 0.12f;
-          bool thumbMostlyVertical =
-              thumbDirection.y < -palmSize * 0.22f &&
-              Mathf.Abs(thumbDirection.y) > Mathf.Abs(thumbDirection.x) * 0.8f;
-
-          float curlTolerance = palmSize * 0.14f;
-          int curledFingerCount =
-              (indexTip.y > indexPip.y - curlTolerance ? 1 : 0) +
-              (middleTip.y > middlePip.y - curlTolerance ? 1 : 0) +
-              (ringTip.y > ringPip.y - curlTolerance ? 1 : 0) +
-              (pinkyTip.y > pinkyPip.y - curlTolerance ? 1 : 0);
-
-          bool thumbSeparatedFromIndex =
-              Vector2.Distance(
-                  new Vector2(thumbTip.x, thumbTip.y),
-                  new Vector2(indexMcp.x, indexMcp.y)
-              ) > palmSize * 0.45f;
-
-          float confidence = 0f;
-          confidence += thumbRaised ? 0.35f : 0f;
-          confidence += thumbMostlyVertical ? 0.25f : 0f;
-          confidence += Mathf.Clamp01(curledFingerCount / 4f) * 0.25f;
-          confidence += thumbSeparatedFromIndex ? 0.15f : 0f;
-
-          return Mathf.Clamp01(confidence);
-      }
-
-      private static float GetOpenHandConfidence(NormalizedLandmarks hand)
-      {
-          if (IsPinching(hand))
+          float palmSize = PalmSize(hand);
+          if (palmSize < 1e-6f)
           {
               return 0f;
           }
 
-          var indexPip = hand.landmarks[6];
-          var indexTip = hand.landmarks[8];
-          var middlePip = hand.landmarks[10];
-          var middleTip = hand.landmarks[12];
-          var ringPip = hand.landmarks[14];
-          var ringTip = hand.landmarks[16];
-          var pinkyPip = hand.landmarks[18];
-          var pinkyTip = hand.landmarks[20];
+          // Thumb extended, the other four fingers curled, and the thumb held
+          // clear of the fist. Orientation is irrelevant here, so a sideways or
+          // tilted thumbs-up still reads correctly.
+          float thumb = ThumbExtension(hand, palmSize);
+          float fingersCurled =
+              (
+                  FingerCurl(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8]) +
+                  FingerCurl(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12]) +
+                  FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]) +
+                  FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20])
+              ) / 4f;
 
-          int extendedFingerCount =
-              (indexTip.y < indexPip.y ? 1 : 0) +
-              (middleTip.y < middlePip.y ? 1 : 0) +
-              (ringTip.y < ringPip.y ? 1 : 0) +
-              (pinkyTip.y < pinkyPip.y ? 1 : 0);
+          float separationRatio =
+              Vector2.Distance(P2(hand.landmarks[4]), P2(hand.landmarks[5])) / palmSize;
+          float separation = Mathf.Clamp01(Mathf.InverseLerp(0.3f, 0.6f, separationRatio));
 
-          return Mathf.Clamp01(extendedFingerCount / 4f);
+          return Mathf.Clamp01(
+              thumb *
+              Mathf.Lerp(0.5f, 1f, fingersCurled) *
+              Mathf.Lerp(0.7f, 1f, separation));
+      }
+
+      private static float GetOpenHandConfidence(NormalizedLandmarks hand)
+      {
+          float palmSize = PalmSize(hand);
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
+
+          // All four fingers long and straight. Pinch suppression is applied in
+          // ClassifyHand so an open palm and a pinch cannot both read high.
+          float openness =
+              (
+                  FingerOpenScore(hand.landmarks[5], hand.landmarks[6], hand.landmarks[8], palmSize) +
+                  FingerOpenScore(hand.landmarks[9], hand.landmarks[10], hand.landmarks[12], palmSize) +
+                  FingerOpenScore(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16], palmSize) +
+                  FingerOpenScore(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20], palmSize)
+              ) / 4f;
+
+          return Mathf.Clamp01(openness);
       }
 
       private static float GetSidePeaceNavigationConfidence(NormalizedLandmarks hand, out int direction)
       {
           direction = 0;
-          var wrist = hand.landmarks[0];
-          var thumbTip = hand.landmarks[4];
+          float palmSize = PalmSize(hand);
+          if (palmSize < 1e-6f)
+          {
+              return 0f;
+          }
 
           var indexMcp = hand.landmarks[5];
+          var indexPip = hand.landmarks[6];
           var indexTip = hand.landmarks[8];
-
           var middleMcp = hand.landmarks[9];
+          var middlePip = hand.landmarks[10];
           var middleTip = hand.landmarks[12];
-          var ringMcp = hand.landmarks[13];
-          var ringPip = hand.landmarks[14];
-          var ringTip = hand.landmarks[16];
-          var pinkyMcp = hand.landmarks[17];
-          var pinkyPip = hand.landmarks[18];
-          var pinkyTip = hand.landmarks[20];
 
-          Vector2 indexDirection = new Vector2(
-              indexTip.x - indexMcp.x,
-              indexTip.y - indexMcp.y
-          );
-          Vector2 middleDirection = new Vector2(
-              middleTip.x - middleMcp.x,
-              middleTip.y - middleMcp.y
-          );
+          Vector2 indexDirection = P2(indexTip) - P2(indexMcp);
+          Vector2 middleDirection = P2(middleTip) - P2(middleMcp);
           Vector2 averageDirection = (indexDirection + middleDirection) * 0.5f;
 
-          float indexLength = Vector2.Distance(
-              new Vector2(indexTip.x, indexTip.y),
-              new Vector2(indexMcp.x, indexMcp.y)
-          );
+          // Shape gate: index + middle out, ring + pinky tucked. Uses min() so
+          // the weakest part of the shape governs the score (forgiving but still
+          // requires the whole shape), instead of a boolean count.
+          float indexOut = FingerOpenScore(indexMcp, indexPip, indexTip, palmSize);
+          float middleOut = FingerOpenScore(middleMcp, middlePip, middleTip, palmSize);
+          float ringCurl = FingerCurl(hand.landmarks[13], hand.landmarks[14], hand.landmarks[16]);
+          float pinkyCurl = FingerCurl(hand.landmarks[17], hand.landmarks[18], hand.landmarks[20]);
+          float shape = Mathf.Min(Mathf.Min(indexOut, middleOut), Mathf.Min(ringCurl, pinkyCurl));
 
-          float middleLength = Vector2.Distance(
-              new Vector2(middleTip.x, middleTip.y),
-              new Vector2(middleMcp.x, middleMcp.y)
-          );
+          // Quality: the two fingers must point sideways and stay parallel. This
+          // is what makes the gesture a *side* peace rather than a "V" up.
+          float indexHoriz = Horizontalness(indexDirection);
+          float middleHoriz = Horizontalness(middleDirection);
+          float aligned = Mathf.Clamp01(
+              Mathf.InverseLerp(0.4f, 0.85f,
+                  Vector2.Dot(indexDirection.normalized, middleDirection.normalized)));
+          float sameDirection =
+              Mathf.Sign(indexDirection.x) == Mathf.Sign(middleDirection.x) ? 1f : 0f;
+          float quality = (indexHoriz + middleHoriz + aligned) / 3f;
 
-          float ringLength = Vector2.Distance(
-              new Vector2(ringTip.x, ringTip.y),
-              new Vector2(ringMcp.x, ringMcp.y)
-          );
+          float confidence = Mathf.Clamp01(shape * Mathf.Lerp(0.5f, 1f, quality) * sameDirection);
 
-          float pinkyLength = Vector2.Distance(
-              new Vector2(pinkyTip.x, pinkyTip.y),
-              new Vector2(pinkyMcp.x, pinkyMcp.y)
-          );
-
-          float palmSize = Vector2.Distance(
-              new Vector2(wrist.x, wrist.y),
-              new Vector2(middleMcp.x, middleMcp.y)
-          );
-          float minimumExtendedLength = Mathf.Max(0.08f, palmSize * 0.55f);
-          float maximumRelaxedLength = Mathf.Max(indexLength, middleLength) * 0.85f;
-          float relaxedCurlTolerance = Mathf.Max(0.02f, palmSize * 0.12f);
-          float minimumPinchDistance = Mathf.Max(0.08f, palmSize * 0.45f);
-
-          bool indexExtended = indexLength > minimumExtendedLength;
-          bool middleExtended = middleLength > minimumExtendedLength;
-          bool indexMostlyHorizontal =
-              Mathf.Abs(indexDirection.x) > Mathf.Abs(indexDirection.y) * 1.45f;
-          bool middleMostlyHorizontal =
-              Mathf.Abs(middleDirection.x) > Mathf.Abs(middleDirection.y) * 1.45f;
-          bool fingersPointSameDirection =
-              Mathf.Sign(indexDirection.x) == Mathf.Sign(middleDirection.x);
-          bool fingersAligned =
-              Vector2.Dot(indexDirection.normalized, middleDirection.normalized) > 0.72f;
-          bool ringRelaxed =
-              ringLength < maximumRelaxedLength ||
-              ringTip.y > ringPip.y - relaxedCurlTolerance;
-          bool pinkyRelaxed =
-              pinkyLength < maximumRelaxedLength ||
-              pinkyTip.y > pinkyPip.y - relaxedCurlTolerance;
-          bool notPinching = Vector2.Distance(
-              new Vector2(thumbTip.x, thumbTip.y),
-              new Vector2(indexTip.x, indexTip.y)
-          ) > minimumPinchDistance;
-
-          float confidence = 0f;
-          confidence += indexExtended ? 0.15f : 0f;
-          confidence += middleExtended ? 0.15f : 0f;
-          confidence += indexMostlyHorizontal ? 0.15f : 0f;
-          confidence += middleMostlyHorizontal ? 0.15f : 0f;
-          confidence += fingersPointSameDirection ? 0.1f : 0f;
-          confidence += fingersAligned ? 0.1f : 0f;
-          confidence += ringRelaxed ? 0.08f : 0f;
-          confidence += pinkyRelaxed ? 0.08f : 0f;
-          confidence += notPinching ? 0.04f : 0f;
-
-          confidence = Mathf.Clamp01(confidence);
-          if (Mathf.Abs(averageDirection.x) > 0.0001f)
+          if (Mathf.Abs(averageDirection.x) > 1e-4f)
           {
               direction = averageDirection.x > 0f ? 1 : -1;
           }
 
           return confidence;
+      }
+
+      // 0 = the vector points mostly up/down, 1 = mostly left/right.
+      private static float Horizontalness(Vector2 v)
+      {
+          float ratio = Mathf.Abs(v.x) / (Mathf.Abs(v.y) + 1e-5f);
+          return Mathf.Clamp01(Mathf.InverseLerp(0.7f, 1.6f, ratio));
+      }
+
+      // Bundle of the suppressed per-hand gesture scores. Suppression makes the
+      // gestures compete so that only one reads high at a time.
+      private struct HandGestureScores
+      {
+          public float pinch;
+          public float fist;
+          public float openHand;
+          public float thumbsUp;
+          public float nav;
+          public int navDirection;
+      }
+
+      private static HandGestureScores ClassifyHand(NormalizedLandmarks hand)
+      {
+          HandGestureScores s = new HandGestureScores();
+
+          float pinchRaw = GetPinchConfidence(hand);
+          float fistRaw = GetFistConfidence(hand);
+          float openRaw = GetOpenHandConfidence(hand);
+          float thumbsUpRaw = GetThumbsUpConfidence(hand);
+          float navRaw = GetSidePeaceNavigationConfidence(hand, out s.navDirection);
+
+          // Mutual exclusivity: overlapping gestures suppress one another so a
+          // single frame yields one clear winner instead of several near-ties.
+          //  - a pinch and an open palm share the "fingers out" look
+          //  - a thumbs-up and a side-peace are both "fist + something extended",
+          //    which is exactly what a fist looks like too
+          s.pinch = pinchRaw * (1f - 0.5f * openRaw);
+          s.openHand = openRaw * (1f - pinchRaw) * (1f - 0.5f * thumbsUpRaw);
+          s.thumbsUp = thumbsUpRaw * (1f - navRaw);
+          s.nav = navRaw;
+          s.fist = fistRaw * (1f - thumbsUpRaw) * (1f - navRaw);
+
+          return s;
       }
 
     }
